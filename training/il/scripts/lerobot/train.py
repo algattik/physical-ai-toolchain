@@ -185,6 +185,26 @@ def run_training(cmd: list[str], source: str = "osmo-lerobot-training") -> int:
             params["blob_prefix"] = os.environ.get("BLOB_PREFIX", "")
         mlflow.log_params(params)
 
+        # Lineage tags: dataset -> run -> registered model. These are visible
+        # in the MLflow Run UI under "Tags" and are queryable via the SDK.
+        lineage_tags: dict[str, str] = {
+            "lerobot.framework": "lerobot",
+            "lerobot.policy_type": os.environ.get("POLICY_TYPE", "act"),
+            "lerobot.job_name": os.environ.get("JOB_NAME", ""),
+        }
+        if os.environ.get("DATASET_REPO_ID"):
+            lineage_tags["dataset.repo_id"] = os.environ["DATASET_REPO_ID"]
+        if os.environ.get("STORAGE_ACCOUNT"):
+            lineage_tags["dataset.storage_account"] = os.environ["STORAGE_ACCOUNT"]
+            lineage_tags["dataset.storage_container"] = os.environ.get("STORAGE_CONTAINER", "datasets")
+            lineage_tags["dataset.blob_prefix"] = os.environ.get("BLOB_PREFIX", "")
+            lineage_tags["dataset.source"] = "azure-blob"
+        elif os.environ.get("DATASET_REPO_ID"):
+            lineage_tags["dataset.source"] = "huggingface"
+        if os.environ.get("REGISTER_CHECKPOINT"):
+            lineage_tags["model.register_name"] = os.environ["REGISTER_CHECKPOINT"]
+        mlflow.set_tags(lineage_tags)
+
         print(f"[MLflow] Starting training: {' '.join(cmd)}")
         process = subprocess.Popen(
             cmd,

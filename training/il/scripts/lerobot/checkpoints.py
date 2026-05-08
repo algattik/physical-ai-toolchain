@@ -74,21 +74,72 @@ def _register_model_via_aml(
         register_name = os.environ.get("REGISTER_CHECKPOINT", "") or job_name
         model_name = register_name.replace("_", "-")
 
+        # Lineage metadata: dataset -> job -> model.
+        # These tags make it possible to walk from a registered model back to
+        # the training run, the MLflow run, and the dataset (HuggingFace repo
+        # or Azure Blob path) that produced it. Surfaces in the AML Model
+        # card and via `az ml model show --name <name>`.
+        dataset_repo_id = os.environ.get("DATASET_REPO_ID", "")
+        storage_account = os.environ.get("STORAGE_ACCOUNT", "")
+        storage_container = os.environ.get("STORAGE_CONTAINER", "")
+        blob_prefix = os.environ.get("BLOB_PREFIX", "")
+        azureml_run_id = os.environ.get("AZUREML_RUN_ID", "") or os.environ.get("MLFLOW_RUN_ID", "")
+        mlflow_run_id = os.environ.get("MLFLOW_RUN_ID", "")
+        experiment_id = os.environ.get("MLFLOW_EXPERIMENT_ID", "")
+
+        if storage_account and blob_prefix:
+            dataset_uri = f"azureml://datastores/{storage_account}/paths/{storage_container}/{blob_prefix}"
+            dataset_source = f"blob://{storage_account}/{storage_container}/{blob_prefix}"
+        elif dataset_repo_id:
+            dataset_uri = f"hf://{dataset_repo_id}"
+            dataset_source = dataset_uri
+        else:
+            dataset_uri = ""
+            dataset_source = ""
+
+        description_lines = [
+            f"LeRobot {policy_type} policy",
+            f"Job: {job_name} (checkpoint {checkpoint_name})",
+        ]
+        if dataset_source:
+            description_lines.append(f"Dataset: {dataset_source}")
+        if azureml_run_id:
+            description_lines.append(f"AML run: {azureml_run_id}")
+        description = "\n".join(description_lines)
+
+        tags = {
+            "framework": "lerobot",
+            "policy_type": policy_type,
+            "job_name": job_name,
+            "checkpoint": checkpoint_name,
+            "source": source,
+        }
+        if dataset_repo_id:
+            tags["dataset_repo_id"] = dataset_repo_id
+        if storage_account:
+            tags["dataset_storage_account"] = storage_account
+            tags["dataset_storage_container"] = storage_container
+            tags["dataset_blob_prefix"] = blob_prefix
+        if dataset_uri:
+            tags["dataset_uri"] = dataset_uri
+        if azureml_run_id:
+            tags["azureml_run_id"] = azureml_run_id
+        if mlflow_run_id:
+            tags["mlflow_run_id"] = mlflow_run_id
+        if experiment_id:
+            tags["mlflow_experiment_id"] = experiment_id
+
         model = Model(
             path=str(checkpoint_path),
             name=model_name,
-            description=f"LeRobot {policy_type} policy from job: {job_name} (checkpoint {checkpoint_name})",
+            description=description,
             type=AssetTypes.CUSTOM_MODEL,
-            tags={
-                "framework": "lerobot",
-                "policy_type": policy_type,
-                "job_name": job_name,
-                "checkpoint": checkpoint_name,
-                "source": source,
-            },
+            tags=tags,
         )
         registered = client.models.create_or_update(model)
         print(f"[AzureML] Registered: {registered.name} v{registered.version} ({checkpoint_name})")
+        if dataset_source:
+            print(f"[AzureML] Lineage: {dataset_source} -> {job_name} -> {registered.name}:v{registered.version}")
         return True
     except Exception as exc:
         print(f"[AzureML] Failed to register checkpoint {checkpoint_name}: {exc}")
