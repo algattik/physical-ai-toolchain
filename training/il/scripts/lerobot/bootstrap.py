@@ -35,6 +35,15 @@ def bootstrap_mlflow(
     Raises:
         SystemExit: On missing Azure environment variables or connection failure.
     """
+    # Point MLflow's registry URI at a local file path BEFORE importing mlflow
+    # or azure.ai.ml. azure.ai.ml.MLClient.__init__ initializes mlflow as a
+    # side effect, which then probes the tracking URI as a registry URI and
+    # fails because the Azure ML MLflow endpoint does not implement registry.
+    # Setting the env var pre-import avoids that probe.
+    registry_dir = Path(os.environ.get("MLFLOW_LOCAL_REGISTRY_DIR", "/tmp/mlflow_registry"))
+    registry_dir.mkdir(parents=True, exist_ok=True)
+    os.environ.setdefault("MLFLOW_REGISTRY_URI", f"file://{registry_dir}")
+
     try:
         import mlflow
         from azure.ai.ml import MLClient
