@@ -76,6 +76,17 @@ def bootstrap_mlflow(
             print("[ERROR] Azure ML workspace does not expose MLflow tracking URI", file=sys.stderr)
             sys.exit(1)
 
+        # MLflow's MlflowClient defaults the registry URI to the tracking URI.
+        # Azure ML's MLflow endpoint only implements tracking, not registry, so
+        # any code that touches the registry (set_experiment, log_model, etc.)
+        # fails with "Model registry functionality is unavailable; got
+        # unsupported URI 'azureml://...'". Point the registry URI at a local
+        # file-scheme directory (one of the supported schemes per the MLflow
+        # error message) before any tracking operation that creates a client.
+        registry_dir = Path(os.environ.get("MLFLOW_LOCAL_REGISTRY_DIR", "/tmp/mlflow_registry"))
+        registry_dir.mkdir(parents=True, exist_ok=True)
+        mlflow.set_registry_uri(f"file://{registry_dir}")
+
         mlflow.set_tracking_uri(tracking_uri)
 
         resolved_name = experiment_name or f"lerobot-{policy_type}-{job_name}"
