@@ -23,7 +23,7 @@ LeRobot behavioral cloning training for ACT and Diffusion policy architectures. 
 |-------------------|--------------------------------------------------------------------------------------------------------------------------------|
 | Infrastructure    | AKS cluster deployed via [Infrastructure Guide](https://github.com/microsoft/physical-ai-toolchain/blob/main/deploy/README.md) |
 | Azure ML or OSMO  | At least one platform configured (see Platform Selection section)                                                              |
-| HuggingFace token | Required for private datasets (`hf_token` credential)                                                                          |
+| HuggingFace token | Required only for private HuggingFace datasets (`hf_token` credential); Azure Blob datasets use managed identity               |
 
 ## 🚀 Quick Start
 
@@ -140,6 +140,8 @@ See [Experiment Tracking](experiment-tracking.md) for platform comparison and co
 
 ## 💾 Dataset Workflows
 
+Three strategies for dataset delivery: HuggingFace Hub (download at runtime), OSMO bucket mounting, or Azure Blob Storage with managed identity.
+
 ### HuggingFace Hub (Default)
 
 LeRobot downloads datasets from HuggingFace Hub at runtime. Specify datasets with `--dataset-repo-id`:
@@ -162,6 +164,31 @@ Mount datasets from OSMO buckets backed by Azure Blob Storage:
 ```
 
 Falls back to HuggingFace Hub download when no dataset mount is available.
+
+### Azure Blob Storage (AzureML)
+
+Train directly from Azure Blob Storage datasets using managed identity authentication. Supports single or multiple datasets with automatic merging.
+
+#### Single Dataset
+
+```bash
+./scripts/submit-azureml-lerobot-training.sh \
+  --blob-url "https://mystorageaccount.blob.core.windows.net/training/pusht" \
+  -r pusht-model
+```
+
+#### Multiple Datasets (Automatic Merge)
+
+Combine datasets from different containers or storage accounts:
+
+```bash
+./scripts/submit-azureml-lerobot-training.sh \
+  --blob-url "https://account1.blob.core.windows.net/train/pusht" \
+  --blob-url "https://account2.blob.core.windows.net/val/pusht" \
+  -r merged-pusht-model
+```
+
+LeRobot automatically validates dataset compatibility and merges them before training.
 
 ## 🔄 End-to-End Pipeline
 

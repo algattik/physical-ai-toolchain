@@ -240,21 +240,6 @@ class TestRunTraining:
         captured[_MOD.signal.SIGTERM](15, None)
         assert proc_holder[0].terminated is True
 
-    def test_storage_account_adds_params(self, monkeypatch, fake_mlflow, fake_checkpoints, tmp_path):
-        monkeypatch.setenv("OUTPUT_DIR", str(tmp_path))
-        monkeypatch.setenv("SYSTEM_METRICS", "false")
-        monkeypatch.setenv("STORAGE_ACCOUNT", "myacct")
-        monkeypatch.setenv("BLOB_PREFIX", "data/")
-        _FakePopen.lines = []
-        monkeypatch.setattr(_MOD.subprocess, "Popen", _FakePopen)
-        monkeypatch.setattr(_MOD.signal, "signal", lambda *a, **k: None)
-
-        _MOD.run_training(["lerobot-train"])
-        params = fake_mlflow.log_params.call_args.args[0]
-        assert params["storage_account"] == "myacct"
-        assert params["blob_prefix"] == "data/"
-
-
 class TestMain:
     def _setup(self, monkeypatch, tmp_path, fake_mlflow, fake_checkpoints, fake_bootstrap):
         monkeypatch.setenv("OUTPUT_DIR", str(tmp_path))
@@ -303,13 +288,6 @@ class TestMain:
         monkeypatch.setattr(_MOD, "Path", fake_path)
         _MOD.main()
         assert _MOD.os.environ.get("FOO_KEY") == "bar"
-
-    def test_storage_account_changes_source(self, monkeypatch, tmp_path, fake_mlflow, fake_checkpoints, fake_bootstrap):
-        self._setup(monkeypatch, tmp_path, fake_mlflow, fake_checkpoints, fake_bootstrap)
-        monkeypatch.setattr(_MOD.sys, "argv", ["train.py"])
-        monkeypatch.setenv("STORAGE_ACCOUNT", "acct")
-        # Capture run_training source argument by patching it
-        captured = {}
 
         def fake_run(cmd, source="x"):
             captured["source"] = source

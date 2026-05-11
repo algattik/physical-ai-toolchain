@@ -31,22 +31,18 @@ Usage: submit-azureml-lerobot-training.sh [OPTIONS] [-- az-ml-job-flags]
 
 Submit LeRobot behavioral cloning training to Azure ML.
 
-REQUIRED:
-    -d, --dataset-repo-id ID     HuggingFace dataset repository or logical name
-                                 (also used as local folder when --from-blob)
+OPTIONS:
+    -d, --dataset-repo-id ID     Dataset logical name for folder naming (default: dataset)
 
 DATA SOURCE:
-        --from-blob               Use Azure Blob Storage as data source instead of HuggingFace Hub
-        --storage-account NAME    Azure Storage account name
-        --storage-container NAME  Blob container name (default: datasets)
-        --blob-prefix PREFIX      Blob path prefix for dataset (defaults to dataset-repo-id)
-        --dataset-root DIR        Container path where blob dataset is materialized
-                                  (default: /workspace/data)
+        --blob-url URL                Add blob dataset URL (repeatable; use multiple times for merge)
+        --dataset-root DIR            Container path where datasets are materialized
+                                      (default: /workspace/data)
 
 AZUREML ASSET OPTIONS:
     --environment-name NAME       AzureML environment name (default: lerobot-training-env)
     --environment-version VER     Environment version (default: 1.0.0)
-    --image IMAGE                 Container image (default: pytorch/pytorch:2.4.1-cuda12.4-cudnn9-runtime)
+    --image IMAGE                 Container image (default: pytorch/pytorch:2.11.0-cuda12.8-cudnn9-runtime)
     --assets-only                 Register environment without submitting job
 
 TRAINING OPTIONS:
@@ -88,7 +84,7 @@ Values resolved: CLI > Environment variables > Terraform outputs
 Additional arguments after -- are forwarded to az ml job create.
 
 EXAMPLES:
-    # ACT training with defaults
+    # ACT training with HuggingFace dataset
     submit-azureml-lerobot-training.sh -d lerobot/aloha_sim_insertion_human
 
     # Diffusion policy with custom hyperparameters
@@ -110,13 +106,16 @@ EXAMPLES:
       --policy-repo-id user/pretrained-act \
       --training-steps 10000
 
-    # Train from Azure Blob Storage
+    # Single blob dataset
     submit-azureml-lerobot-training.sh \
-      -d hve-robo/hve-robo-cell \
-      --from-blob \
-      --storage-account stosmorbt3dev001 \
-      --blob-prefix hve-robo/hve-robo-cell \
-      -r my-act-model
+      --blob-url "https://mystorageaccount.blob.core.windows.net/datasets/pusht" \
+      -r pusht-model
+
+    # Multiple blob datasets (merged)
+    submit-azureml-lerobot-training.sh \
+      --blob-url "https://account1.blob.core.windows.net/train/pusht" \
+      --blob-url "https://account2.blob.core.windows.net/val/pusht" \
+      -r merged-pusht-model
 
     # Register environment only (no job submission)
     submit-azureml-lerobot-training.sh -d placeholder --assets-only
@@ -159,7 +158,7 @@ EOF
 
 environment_name="lerobot-training-env"
 environment_version="1.0.0"
-image="${IMAGE:-pytorch/pytorch:2.4.1-cuda12.4-cudnn9-runtime}"
+image="${IMAGE:-pytorch/pytorch:2.11.0-cuda12.8-cudnn9-runtime}"
 assets_only=false
 
 job_file="$REPO_ROOT/training/il/workflows/azureml/lerobot-train.yaml"
@@ -170,10 +169,7 @@ output_dir="${OUTPUT_DIR:-/workspace/outputs/train}"
 policy_repo_id="${POLICY_REPO_ID:-}"
 lerobot_version="${LEROBOT_VERSION:-}"
 
-from_blob=false
-storage_account="${BLOB_STORAGE_ACCOUNT:-${AZURE_STORAGE_ACCOUNT_NAME:-}}"
-storage_container="${BLOB_STORAGE_CONTAINER:-datasets}"
-blob_prefix="${BLOB_PREFIX:-}"
+blob_urls=()
 dataset_root="${DATASET_ROOT:-/workspace/data}"
 
 training_steps="${TRAINING_STEPS:-}"
@@ -215,10 +211,7 @@ while [[ $# -gt 0 ]]; do
     -o|--output-dir)              output_dir="$2"; shift 2 ;;
     --policy-repo-id)             policy_repo_id="$2"; shift 2 ;;
     --lerobot-version)            lerobot_version="$2"; shift 2 ;;
-    --from-blob)                  from_blob=true; shift ;;
-    --storage-account)            storage_account="$2"; shift 2 ;;
-    --storage-container)          storage_container="$2"; shift 2 ;;
-    --blob-prefix)                blob_prefix="$2"; shift 2 ;;
+    --blob-url)                   blob_urls+=("$2"); shift 2 ;;
     --dataset-root)               dataset_root="$2"; shift 2 ;;
     --training-steps)             training_steps="$2"; shift 2 ;;
     --batch-size)                 batch_size="$2"; shift 2 ;;
@@ -248,14 +241,14 @@ done
 require_tools az
 ensure_ml_extension
 
-[[ -z "$dataset_repo_id" ]] && fatal "--dataset-repo-id is required"
 [[ -n "$subscription_id" ]] || fatal "AZURE_SUBSCRIPTION_ID required"
 [[ -n "$resource_group" ]] || fatal "AZURE_RESOURCE_GROUP required"
 [[ -n "$workspace_name" ]] || fatal "AZUREML_WORKSPACE_NAME required"
 
-if [[ "$from_blob" == "true" ]]; then
-  [[ -z "$storage_account" ]] && fatal "--storage-account is required with --from-blob"
-  [[ -z "$blob_prefix" ]] && blob_prefix="$dataset_repo_id"
+if [[ ${#blob_urls[@]} -eq 0 ]]; then
+  [[ -z "$dataset_repo_id" ]] && fatal "--dataset-repo-id is required (or provide --blob-url for blob storage)"
+else
+  dataset_repo_id="${dataset_repo_id:-dataset}"
 fi
 
 case "$policy_type" in
@@ -274,8 +267,8 @@ if [[ "$config_preview" == "true" ]]; then
   print_kv "Batch Size" "${batch_size:-<default>}"
   print_kv "Save Freq" "$save_freq"
   print_kv "Register Model" "${register_checkpoint:-<none>}"
-  if [[ "$from_blob" == "true" ]]; then
-    print_kv "Data Source" "Azure Blob ($storage_account/$storage_container/$blob_prefix)"
+  if [[ ${#blob_urls[@]} -gt 0 ]]; then
+    print_kv "Blob URLs" "${#blob_urls[@]} dataset(s)"
     print_kv "Dataset Root" "$dataset_root"
   else
     print_kv "Data Source" "HuggingFace Hub"
@@ -360,13 +353,10 @@ az_args+=(
 [[ -n "$eval_freq" ]]           && az_args+=(--set "inputs.eval_freq=$eval_freq")
 [[ -n "$register_checkpoint" ]] && az_args+=(--set "inputs.register_checkpoint=$register_checkpoint")
 
-if [[ "$from_blob" == "true" ]]; then
-  az_args+=(
-    --set "inputs.storage_account=$storage_account"
-    --set "inputs.storage_container=$storage_container"
-    --set "inputs.blob_prefix=$blob_prefix"
-    --set "inputs.dataset_root=$dataset_root"
-  )
+if [[ ${#blob_urls[@]} -gt 0 ]]; then
+  blob_urls_json=$(python3 -c "import json; import sys; print(json.dumps(sys.argv[1:]))" "${blob_urls[@]}")
+  az_args+=(--set "inputs.blob_urls=$blob_urls_json")
+  az_args+=(--set "inputs.dataset_root=$dataset_root")
 fi
 
 # Environment variables
@@ -395,13 +385,10 @@ az_args+=(
 [[ -n "$eval_freq" ]]           && az_args+=(--set "environment_variables.EVAL_FREQ=$eval_freq")
 [[ -n "$register_checkpoint" ]] && az_args+=(--set "environment_variables.REGISTER_CHECKPOINT=$register_checkpoint")
 
-if [[ "$from_blob" == "true" ]]; then
-  az_args+=(
-    --set "environment_variables.STORAGE_ACCOUNT=$storage_account"
-    --set "environment_variables.STORAGE_CONTAINER=$storage_container"
-    --set "environment_variables.BLOB_PREFIX=$blob_prefix"
-    --set "environment_variables.DATASET_ROOT=$dataset_root"
-  )
+if [[ ${#blob_urls[@]} -gt 0 ]]; then
+  blob_urls_json=$(python3 -c "import json; import sys; print(json.dumps(sys.argv[1:]))" "${blob_urls[@]}")
+  az_args+=(--set "environment_variables.BLOB_URLS=$blob_urls_json")
+  az_args+=(--set "environment_variables.DATASET_ROOT=$dataset_root")
 fi
 
 [[ ${#forward_args[@]} -gt 0 ]] && az_args+=("${forward_args[@]}")
@@ -416,7 +403,7 @@ info "  Dataset: $dataset_repo_id"
 info "  Policy: $policy_type"
 info "  Job Name: $job_name"
 info "  Image: $image"
-[[ "$from_blob" == "true" ]] && info "  Data Source: Azure Blob ($storage_account/$storage_container/$blob_prefix)"
+[[ ${#blob_urls[@]} -gt 0 ]] && info "  Data Source: Blob URLs (${#blob_urls[@]} dataset(s))"
 
 job_result=$("${az_args[@]}") || fatal "Job submission failed"
 
@@ -441,6 +428,4 @@ print_kv "Compute" "${compute:-<not set>}"
 print_kv "Instance Type" "$instance_type"
 print_kv "Environment" "${environment_name}:${environment_version}"
 print_kv "Workspace" "$workspace_name"
-if [[ "$from_blob" == "true" ]]; then
-  print_kv "Data Source" "Azure Blob ($storage_account/$storage_container/$blob_prefix)"
-fi
+[[ ${#blob_urls[@]} -gt 0 ]] && print_kv "Blob Datasets" "${#blob_urls[@]}"

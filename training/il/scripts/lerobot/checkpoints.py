@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 from pathlib import Path
 from typing import Any
@@ -80,16 +81,19 @@ def _register_model_via_aml(
         # or Azure Blob path) that produced it. Surfaces in the AML Model
         # card and via `az ml model show --name <name>`.
         dataset_repo_id = os.environ.get("DATASET_REPO_ID", "")
-        storage_account = os.environ.get("STORAGE_ACCOUNT", "")
-        storage_container = os.environ.get("STORAGE_CONTAINER", "")
-        blob_prefix = os.environ.get("BLOB_PREFIX", "")
+        blob_urls_json = os.environ.get("BLOB_URLS", "")
         azureml_run_id = os.environ.get("AZUREML_RUN_ID", "") or os.environ.get("MLFLOW_RUN_ID", "")
         mlflow_run_id = os.environ.get("MLFLOW_RUN_ID", "")
         experiment_id = os.environ.get("MLFLOW_EXPERIMENT_ID", "")
 
-        if storage_account and blob_prefix:
-            dataset_uri = f"azureml://datastores/{storage_account}/paths/{storage_container}/{blob_prefix}"
-            dataset_source = f"blob://{storage_account}/{storage_container}/{blob_prefix}"
+        if blob_urls_json and blob_urls_json != "{}":
+            try:
+                blob_urls = json.loads(blob_urls_json)
+                dataset_uri = f"blob://{' '.join(blob_urls)}"
+                dataset_source = dataset_uri
+            except (json.JSONDecodeError, TypeError):
+                dataset_uri = ""
+                dataset_source = ""
         elif dataset_repo_id:
             dataset_uri = f"hf://{dataset_repo_id}"
             dataset_source = dataset_uri
@@ -116,10 +120,6 @@ def _register_model_via_aml(
         }
         if dataset_repo_id:
             tags["dataset_repo_id"] = dataset_repo_id
-        if storage_account:
-            tags["dataset_storage_account"] = storage_account
-            tags["dataset_storage_container"] = storage_container
-            tags["dataset_blob_prefix"] = blob_prefix
         if dataset_uri:
             tags["dataset_uri"] = dataset_uri
         if azureml_run_id:

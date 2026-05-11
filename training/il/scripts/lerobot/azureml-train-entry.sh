@@ -5,6 +5,9 @@ set -euo pipefail
 
 echo "=== LeRobot AzureML Training ==="
 
+# Disable PEP 668 externally-managed-environment restriction in PyTorch 2.4.1+ containers
+rm -f /usr/lib/python3.*/EXTERNALLY-MANAGED 2>/dev/null || true
+
 # wandb is a transitive dependency of lerobot==0.4.4 (hard pin in upstream
 # pyproject.toml). Setting WANDB_MODE=disabled prevents the client from
 # initializing or making network calls; logging goes to MLflow / Azure ML only.
@@ -42,9 +45,9 @@ train_args=(
   --wandb.enable=false
 )
 
-# Resolve data source: Azure Blob Storage when STORAGE_ACCOUNT is set, otherwise HuggingFace Hub
-if [[ -n "${STORAGE_ACCOUNT:-}" ]]; then
-  echo "Downloading dataset from Azure Blob Storage (${STORAGE_ACCOUNT}/${STORAGE_CONTAINER}/${BLOB_PREFIX})..."
+# Resolve data source: Azure Blob Storage URLs or HuggingFace Hub
+if [[ -n "${BLOB_URLS:-}" ]] && [[ "${BLOB_URLS}" != "{}" ]]; then
+  echo "Downloading datasets from Azure Blob Storage..."
   python3 -m training.il.scripts.lerobot.download_dataset
   FULL_DATASET_PATH="${DATASET_ROOT}/${DATASET_REPO_ID}"
   echo "Dataset materialized at: ${FULL_DATASET_PATH}"
