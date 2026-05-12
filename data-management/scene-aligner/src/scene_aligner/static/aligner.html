@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Scene Aligner</title>
+<link rel="stylesheet" href="/static/aligner.css">
+</head>
+<body>
+<header>
+  <div class="row">
+    <span class="pill">Scene Aligner</span>
+    <button class="btn" id="open-picker">📁 Choose dataset</button>
+    <span id="current" class="hint">none</span>
+    <label>Camera
+      <select id="camera"></select>
+    </label>
+    <span id="topic" class="hint"></span>
+  </div>
+  <div class="row">
+    <label>Reference opacity
+      <input id="ref-op" type="range" min="0" max="100" step="10" value="50">
+      <span id="ref-op-val">50%</span>
+    </label>
+    <label>Live opacity
+      <input id="live-op" type="range" min="0" max="100" step="10" value="50">
+      <span id="live-op-val">50%</span>
+    </label>
+    <label><input id="invert-ref" type="checkbox" checked> Invert reference</label>
+    <label><input id="invert-live" type="checkbox"> Invert live</label>
+  </div>
+</header>
+<div id="stage">
+  <img id="view" src="/stream.mjpg" alt="composite">
+  <div id="lens"><img id="lens-img" src="/stream.mjpg" alt=""></div>
+  <div id="score" title="Lighting-invariant gradient ZNCC. Auto-zoomed; ▲▼ vs session best.">
+    <div class="label">
+      <span>Alignment</span>
+      <button id="score-reset" title="Reset session best">↺</button>
+    </div>
+    <div><span class="value" id="score-value">—</span><span class="delta flat" id="score-delta"></span></div>
+    <div class="bar"><div id="score-bar" style="width:0%"></div><div class="best" id="score-best-mark" style="display:none"></div></div>
+    <canvas id="score-canvas" width="260" height="48"></canvas>
+    <div class="meta" id="score-meta"></div>
+  </div>
+</div>
+
+<div id="modal" role="dialog" aria-label="Choose dataset">
+  <div class="topbar">
+    <h2>Choose dataset</h2>
+    <button class="btn ghost" id="close-picker">Close</button>
+  </div>
+  <div id="grid"></div>
+</div>
+
+<aside id="drawer" aria-label="Dataset details">
+  <div class="topbar">
+    <h3 id="drawer-title">—</h3>
+    <button class="btn ghost" id="close-drawer">Close</button>
+  </div>
+  <div class="content">
+    <dl class="summary" id="drawer-summary"></dl>
+    <h4 style="margin:0 0 .4rem;color:#aaa;font-weight:500;">Full info.json</h4>
+    <pre id="drawer-raw">…</pre>
+  </div>
+  <div class="actions">
+    <button class="btn" id="drawer-use">Use this</button>
+  </div>
+</aside>
+
+<script src="/static/aligner.js" defer></script>
+</body>
+</html>

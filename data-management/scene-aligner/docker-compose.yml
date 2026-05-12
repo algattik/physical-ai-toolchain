@@ -1,0 +1,67 @@
+x-ros-env: &ros-env
+  ROS_DOMAIN_ID: "42"
+  RMW_IMPLEMENTATION: rmw_fastrtps_cpp
+  PYTHONUNBUFFERED: "1"
+
+services:
+  publisher:
+    # Local-only debugging service: replays every camera in a recorded
+    # dataset onto the topics the aligner subscribes to. NOT part of the
+    # deployed aligner stack — disabled by default; opt in via:
+    #   docker compose --profile dev up
+    # or remove this whole service when running against a real robot.
+    profiles: ["dev"]
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+    image: scene-aligner:latest
+    container_name: scene-aligner-publisher
+    environment:
+      <<: *ros-env
+    networks: [ros]
+    volumes:
+      - "${SCENE_ALIGNER_DATASETS_DIR:-./sample_data}:/data/sample_datasets:ro"
+    command:
+      - python3
+      - -m
+      - scene_aligner_dev.fake_camera
+      - --dataset
+      - /data/sample_datasets/${SCENE_ALIGNER_PUBLISH_DATASET}
+      - --topic-template
+      - ${SCENE_ALIGNER_CAMERA_TOPIC_TEMPLATE:-/sensor/{name}_camera/rgbd/color}
+
+  aligner:
+    # Build the image even when the publisher profile isn't enabled.
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+    image: scene-aligner:latest
+    container_name: scene-aligner
+    environment:
+      <<: *ros-env
+      DATASETS_DIR: /data/sample_datasets
+      DEFAULT_CAMERA_KEY: "${SCENE_ALIGNER_DEFAULT_CAMERA:-}"
+      CAMERA_TOPIC_TEMPLATE: "${SCENE_ALIGNER_CAMERA_TOPIC_TEMPLATE:-/sensor/{name}_camera/rgbd/color}"
+      STREAM_FPS: "15"
+    networks: [ros]
+    ports:
+      # Bind to 127.0.0.1 by default. Set SCENE_ALIGNER_BIND=0.0.0.0 in your
+      # .env to expose on the LAN (and accept the security implications:
+      # there is no auth — anyone reachable can drive the UI and watch the
+      # live camera).
+      - "${SCENE_ALIGNER_BIND:-127.0.0.1}:${SCENE_ALIGNER_PORT:-8080}:8080"
+    volumes:
+      - "${SCENE_ALIGNER_DATASETS_DIR:-./sample_data}:/data/sample_datasets:ro"
+    command:
+      - python3
+      - -m
+      - uvicorn
+      - scene_aligner.aligner:app
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8080"
+
+networks:
+  ros:
+    driver: bridge

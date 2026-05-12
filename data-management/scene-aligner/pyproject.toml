@@ -1,0 +1,42 @@
+[project]
+name = "scene-aligner"
+version = "0.1.0"
+description = "Web overlay of a live ROS 2 camera feed on top of a recorded LeRobot dataset reference frame, used to reset physical scenes for repeatable demonstration capture."
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi==0.136.1",
+    "uvicorn[standard]==0.46.0",
+    "numpy==2.4.4",
+    "opencv-python-headless==4.13.0.92",
+    "pyarrow==24.0.0",
+]
+
+# rclpy and sensor_msgs are NOT pip-installable; they are provided by the
+# ROS 2 Jazzy base image (ros-jazzy-rclpy, ros-jazzy-sensor-msgs apt packages).
+
+[project.optional-dependencies]
+dev = [
+    "ruff==0.15.12",
+    "pytest==9.0.3",
+    "httpx==0.28.1",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+# scene_aligner_dev is intentionally excluded from the production wheel.
+packages = ["src/scene_aligner"]
+
+[tool.hatch.build.targets.wheel.force-include]
+"src/scene_aligner/static" = "scene_aligner/static"
+
+[tool.ruff]
+extend = "../../pyproject.toml"
+
+[tool.ruff.lint.isort]
+known-first-party = ["scene_aligner", "scene_aligner_dev"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
