@@ -27,3 +27,14 @@ def test_lru_get_promotes_recency():
 def test_lru_get_returns_none_for_missing_key():
     cache: OrderedDict = OrderedDict()
     assert _cache_get(cache, 'missing') is None
+
+
+def test_lru_distinguishes_episode_in_key():
+    """Reference cache key includes episode_idx so two episodes from the same
+    (dataset, camera) cache independently — there is no way for one episode's
+    frame to be returned for another."""
+    cache: OrderedDict = OrderedDict()
+    _cache_put(cache, ('ds', 'cam', 0), 'frame0', max_items=10)
+    _cache_put(cache, ('ds', 'cam', 1), 'frame1', max_items=10)
+    assert _cache_get(cache, ('ds', 'cam', 0)) == 'frame0'
+    assert _cache_get(cache, ('ds', 'cam', 1)) == 'frame1'

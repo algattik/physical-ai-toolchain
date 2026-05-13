@@ -8,11 +8,14 @@ frame.
 
 from __future__ import annotations
 
+import logging
 import threading
 from pathlib import Path
 from typing import Any, Optional
 
 import pyarrow.parquet as pq
+
+_LOGGER = logging.getLogger(__name__)
 
 _episodes_cache: dict[str, list[dict]] = {}
 _episodes_lock = threading.Lock()
@@ -39,7 +42,9 @@ def load_episodes(ds_dir: Path, dataset_id: str, fps: float = 30.0) -> list[dict
         for pq_path in sorted(ep_root.glob('**/*.parquet')):
             try:
                 table = pq.read_table(str(pq_path))
-            except Exception:
+            except Exception as e:
+                _LOGGER.warning('Skipping unreadable episode parquet %s: %s',
+                                pq_path, e)
                 continue
             cols = set(table.column_names)
             cam_keys = sorted({
@@ -74,6 +79,10 @@ def load_episodes(ds_dir: Path, dataset_id: str, fps: float = 30.0) -> list[dict
                     'duration_s': duration_s,
                     'tasks': list(tasks_val),
                     'cameras': cameras,
+                    'dataset_from_index': int(
+                        _row_value(row, 'dataset_from_index', 0) or 0),
+                    'dataset_to_index': int(
+                        _row_value(row, 'dataset_to_index', 0) or 0),
                 })
 
     out.sort(key=lambda e: e['idx'])

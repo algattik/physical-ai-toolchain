@@ -4,6 +4,7 @@ version = "0.1.0"
 description = "Web overlay of a live ROS 2 camera feed on top of a recorded LeRobot dataset reference frame, used to reset physical scenes for repeatable demonstration capture."
 requires-python = ">=3.12"
 dependencies = [
+    "av==17.0.1",
     "fastapi==0.136.1",
     "uvicorn[standard]==0.46.0",
     "numpy==2.4.4",

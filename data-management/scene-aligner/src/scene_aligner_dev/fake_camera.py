@@ -23,9 +23,9 @@ import os
 import sys
 import time
 from pathlib import Path
-from typing import Optional
+from typing import Iterator, Optional
 
-import cv2
+import av
 import rclpy
 from rclpy.node import Node
 from rclpy.qos import QoSHistoryPolicy, QoSProfile, QoSReliabilityPolicy
@@ -53,31 +53,38 @@ class CameraStream:
         self.frame_id = frame_id
         self.logger = logger
         self.video_idx = 0
-        self.cap: Optional[cv2.VideoCapture] = None
+        self.container: Optional[av.container.InputContainer] = None
+        self.decoder: Optional[Iterator[av.VideoFrame]] = None
         self.period = 1.0 / 30.0
         self.next_t = time.monotonic()
         self.count = 0
         self.exhausted = False
 
     def open_next(self, loop: bool) -> bool:
-        if self.cap is not None:
-            self.cap.release()
-            self.cap = None
+        self._close_container()
         if self.video_idx >= len(self.videos):
             if not loop:
                 self.exhausted = True
                 return False
             self.video_idx = 0
         path = self.videos[self.video_idx]
-        cap = cv2.VideoCapture(str(path))
-        if not cap.isOpened():
-            self.logger.warning(f'[{self.short}] cannot open {path}')
+        try:
+            container = av.open(str(path))
+        except av.FFmpegError as exc:
+            self.logger.warning(f'[{self.short}] cannot open {path}: {exc}')
             self.video_idx += 1
             return self.open_next(loop)
-        native = cap.get(cv2.CAP_PROP_FPS) or 30.0
+        stream = next((s for s in container.streams.video if s.type == 'video'), None)
+        if stream is None:
+            container.close()
+            self.logger.warning(f'[{self.short}] no video stream in {path}')
+            self.video_idx += 1
+            return self.open_next(loop)
+        native = float(stream.average_rate) if stream.average_rate else 30.0
         fps = self.fps_override or native
         self.period = 1.0 / fps if fps > 0 else 1.0 / 30.0
-        self.cap = cap
+        self.container = container
+        self.decoder = container.decode(stream)
         self.video_idx += 1
         self.logger.info(
             f'[{self.short}] streaming {path.name} @ {fps:.2f} fps '
@@ -87,16 +94,24 @@ class CameraStream:
     def tick(self, now: float, get_clock, loop: bool) -> None:
         if self.exhausted:
             return
-        if self.cap is None and not self.open_next(loop):
+        if self.decoder is None and not self.open_next(loop):
             return
         if now < self.next_t:
             return
-        ok, frame = self.cap.read()
-        if not ok:
+        try:
+            decoded = next(self.decoder)
+        except StopIteration:
             if not self.open_next(loop):
                 return
             self.next_t = now
             return
+        except av.FFmpegError as exc:
+            self.logger.warning(f'[{self.short}] decode error, advancing: {exc}')
+            if not self.open_next(loop):
+                return
+            self.next_t = now
+            return
+        frame = decoded.to_ndarray(format='bgr24')
         self._publish(frame, get_clock)
         self.next_t += self.period
         # Don't spiral if the loop fell badly behind.
@@ -117,10 +132,14 @@ class CameraStream:
         self.publisher.publish(msg)
         self.count += 1
 
+    def _close_container(self) -> None:
+        if self.container is not None:
+            self.container.close()
+            self.container = None
+            self.decoder = None
+
     def close(self) -> None:
-        if self.cap is not None:
-            self.cap.release()
-            self.cap = None
+        self._close_container()
 
 
 class MultiCameraPublisher(Node):

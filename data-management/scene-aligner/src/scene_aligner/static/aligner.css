@@ -53,17 +53,17 @@
   .card .media { position: relative; background: #000; aspect-ratio: 4/3; cursor: pointer; }
   .card .media img, .card .media video { width: 100%; height: 100%; object-fit: contain; display: block; }
   .card .media .play { position: absolute; inset: 0; display: grid; place-items: center; color: #fff; font-size: 2.5rem; opacity: .8; pointer-events: none; text-shadow: 0 0 8px #000; }
-  .card .media .time { position: absolute; left: 0; right: 0; bottom: 18px; padding: 2px 6px; font: 500 0.8rem/1.2 ui-monospace, monospace; color: #fff; background: linear-gradient(to top, rgba(0,0,0,.7), rgba(0,0,0,0)); text-align: right; pointer-events: none; }
-  .card .media .scrub { position: absolute; left: 6px; right: 6px; bottom: 4px; height: 12px; margin: 0; padding: 0; -webkit-appearance: none; appearance: none; background: transparent; cursor: pointer; }
-  .card .media .scrub::-webkit-slider-runnable-track { height: 4px; background: rgba(255,255,255,.25); border-radius: 2px; }
-  .card .media .scrub::-moz-range-track            { height: 4px; background: rgba(255,255,255,.25); border-radius: 2px; }
-  .card .media .scrub::-webkit-slider-thumb { -webkit-appearance: none; appearance: none; width: 12px; height: 12px; border-radius: 50%; background: #2563eb; margin-top: -4px; border: 0; }
-  .card .media .scrub::-moz-range-thumb     { width: 12px; height: 12px; border-radius: 50%; background: #2563eb; border: 0; }
-  .card .media .speed { position: absolute; left: 6px; bottom: 18px; padding: 1px 8px;
+  .card .media .time, .ep-card .media .time { position: absolute; left: 0; right: 0; bottom: 18px; padding: 2px 6px; font: 500 0.8rem/1.2 ui-monospace, monospace; color: #fff; background: linear-gradient(to top, rgba(0,0,0,.7), rgba(0,0,0,0)); text-align: right; pointer-events: none; z-index: 3; }
+  .card .media .scrub, .ep-card .media .scrub { position: absolute; left: 6px; right: 6px; bottom: 4px; height: 12px; margin: 0; padding: 0; -webkit-appearance: none; appearance: none; background: transparent; cursor: pointer; z-index: 3; }
+  .card .media .scrub::-webkit-slider-runnable-track, .ep-card .media .scrub::-webkit-slider-runnable-track { height: 4px; background: rgba(255,255,255,.25); border-radius: 2px; }
+  .card .media .scrub::-moz-range-track,            .ep-card .media .scrub::-moz-range-track            { height: 4px; background: rgba(255,255,255,.25); border-radius: 2px; }
+  .card .media .scrub::-webkit-slider-thumb, .ep-card .media .scrub::-webkit-slider-thumb { -webkit-appearance: none; appearance: none; width: 12px; height: 12px; border-radius: 50%; background: #2563eb; margin-top: -4px; border: 0; }
+  .card .media .scrub::-moz-range-thumb,     .ep-card .media .scrub::-moz-range-thumb     { width: 12px; height: 12px; border-radius: 50%; background: #2563eb; border: 0; }
+  .card .media .speed, .ep-card .media .speed { position: absolute; left: 6px; bottom: 18px; padding: 1px 8px;
                         font: 600 0.75rem/1.4 ui-monospace, monospace; color: #fff;
                         background: rgba(0,0,0,.65); border: 1px solid rgba(255,255,255,.2);
-                        border-radius: 4px; cursor: pointer; user-select: none; }
-  .card .media .speed:hover { background: rgba(37,99,235,.9); }
+                        border-radius: 4px; cursor: pointer; user-select: none; z-index: 3; }
+  .card .media .speed:hover, .ep-card .media .speed:hover { background: rgba(37,99,235,.9); }
   .card .body { padding: 0.75rem; display: flex; flex-direction: column; gap: 0.4rem; flex: 1; }
   .card .acquired { font-size: 1.05rem; font-weight: 600; color: #fff; letter-spacing: 0.02em; }
   .card .acquired .rel { color: #888; font-size: 0.8rem; font-weight: 400; margin-left: 0.4rem; }
@@ -95,9 +95,13 @@
 #ep-grid { display: grid; gap: 0.6rem; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); }
 .ep-card { background: #1c1c1c; border: 1px solid #333; border-radius: 6px; overflow: hidden; cursor: pointer; display: flex; flex-direction: column; }
 .ep-card:hover { border-color: #2563eb; }
-.ep-card .media { position: relative; background: #000; aspect-ratio: 4/3; }
-.ep-card .media img,
-.ep-card .media video { width: 100%; height: 100%; object-fit: contain; display: block; }
+.ep-card .media { position: relative; background: #000; aspect-ratio: 8/3; overflow: hidden; }
+.ep-card .media .thumb { position: absolute; top: 0; bottom: 0; width: 50%; overflow: hidden; }
+.ep-card .media .thumb:nth-child(1) { left: 0; }
+.ep-card .media .thumb:nth-child(2) { right: 0; }
+.ep-card .media .thumb img { width: 100%; height: 100%; object-fit: contain; display: block; }
+.ep-card .media .thumb .badge { position: absolute; left: 4px; top: 3px; font-size: 0.6rem; padding: 0 4px; border-radius: 3px; background: rgba(0,0,0,0.65); color: #ddd; letter-spacing: .03em; pointer-events: none; }
+.ep-card .media video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; display: block; background: #000; }
 .ep-card .body { padding: 0.4rem 0.6rem; font-size: 0.8rem; display: flex; flex-direction: column; gap: 2px; }
 .ep-card .idx  { font-weight: 700; font-family: ui-monospace, monospace; color: #fff; }
 .ep-card .meta { color: #888; }
@@ -108,3 +112,29 @@
 .tag.failure { background: #4c0519; color: #fda4af; border-color: #be123c; }
 .tag.partial { background: #422006; color: #fdba74; border-color: #c2410c; }
 .tag.unlabeled { background: transparent; color: #555; border: 1px dashed #444; }
+
+/* Help modal */
+#help-modal { position: fixed; inset: 0; background: rgba(0,0,0,.85); display: none; z-index: 13; padding: 1.5rem; overflow: auto; }
+#help-modal.open { display: block; }
+#help-modal .topbar { display: flex; justify-content: space-between; align-items: center; max-width: 720px; margin: 0 auto 1rem; }
+#help-modal .help-body { max-width: 720px; margin: 0 auto; background: #181818; border: 1px solid #333; border-radius: 8px; padding: 1.5rem; line-height: 1.5; }
+#help-modal h2 { margin: 0; font-weight: 500; }
+#help-modal h3 { margin: 1.2rem 0 0.4rem; color: #fff; font-size: 1rem; font-weight: 600; }
+#help-modal h3:first-child { margin-top: 0; }
+#help-modal p, #help-modal li { color: #cfcfcf; }
+#help-modal ul, #help-modal ol { padding-left: 1.4rem; margin: 0.4rem 0; }
+#help-modal code { background: #0e0e0e; border: 1px solid #2a2a2a; padding: 0 4px; border-radius: 3px; font-size: 0.85rem; }
+
+/* Reference controls disabled until an episode is loaded */
+header label.ref-ctl { opacity: 0.45; transition: opacity 0.15s; }
+header label.ref-ctl.enabled { opacity: 1; }
+header input:disabled { cursor: not-allowed; }
+
+/* Hide alignment panel until a reference is loaded */
+#score.hidden { display: none; }
+
+/* Episode card details — only shown when grid has .with-details */
+.ep-card .details { display: none; color: #888; font-size: 0.7rem; line-height: 1.4; margin-top: 4px; }
+#ep-grid.with-details .ep-card .details { display: block; }
+
+#ep-modal .filterbar .ep-display { display: inline-flex; align-items: center; gap: 4px; color: #aaa; cursor: pointer; padding: 2px 4px; border-left: 1px solid #333; padding-left: 12px; margin-left: 4px; }

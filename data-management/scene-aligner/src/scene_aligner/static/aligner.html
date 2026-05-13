@@ -10,6 +10,7 @@
   <div class="row">
     <span class="pill">Scene Aligner</span>
     <button class="btn" id="open-picker">📁 Choose dataset</button>
+    <button class="btn ghost" id="open-help" title="How to use" style="padding:0.4rem 0.7rem">?</button>
     <span id="current" class="hint">none</span>
     <label>Camera
       <select id="camera"></select>
@@ -17,22 +18,22 @@
     <span id="topic" class="hint"></span>
   </div>
   <div class="row">
-    <label>Reference opacity
-      <input id="ref-op" type="range" min="0" max="100" step="10" value="50">
+    <label class="ref-ctl">Reference opacity
+      <input id="ref-op" type="range" min="0" max="100" step="10" value="50" disabled>
       <span id="ref-op-val">50%</span>
     </label>
+    <label class="ref-ctl"><input id="invert-ref" type="checkbox" checked disabled> invert</label>
     <label>Live opacity
       <input id="live-op" type="range" min="0" max="100" step="10" value="50">
       <span id="live-op-val">50%</span>
     </label>
-    <label><input id="invert-ref" type="checkbox" checked> Invert reference</label>
-    <label><input id="invert-live" type="checkbox"> Invert live</label>
+    <label><input id="invert-live" type="checkbox"> invert</label>
   </div>
 </header>
 <div id="stage">
   <img id="view" src="/stream.mjpg" alt="composite">
   <div id="lens"><img id="lens-img" src="/stream.mjpg" alt=""></div>
-  <div id="score" title="Lighting-invariant gradient ZNCC. Auto-zoomed; ▲▼ vs session best.">
+  <div id="score" class="hidden" title="Lighting-invariant gradient ZNCC. Auto-zoomed; ▲▼ vs session best.">
     <div class="label">
       <span>Alignment</span>
       <button id="score-reset" title="Reset session best">↺</button>
@@ -66,6 +67,53 @@
     <button class="btn" id="drawer-use">Use this</button>
   </div>
 </aside>
+
+<div id="help-modal" role="dialog" aria-label="How to use">
+  <div class="topbar">
+    <h2>How to use</h2>
+    <button class="btn ghost" id="close-help">Close</button>
+  </div>
+  <div class="help-body">
+    <h3>Goal</h3>
+    <p>Reset a physical scene to match the starting frame of a recorded
+       episode, so the next demonstration begins from the same pose.</p>
+
+    <h3>Workflow</h3>
+    <ol>
+      <li>Pick a <b>camera</b> in the header — the live feed appears immediately.</li>
+      <li>Click <b>📁 Choose dataset</b>, hover cards to preview, click one.</li>
+      <li>In the episode grid, filter by <b>SUCCESS</b>/<b>FAILURE</b> tags or task name,
+          hover an episode to see its motion, click to load its first frame as the reference.</li>
+      <li>Adjust props in the scene until the live feed cancels the inverted reference
+          to flat gray. The <b>Alignment</b> gauge (top-right) climbs as you improve.</li>
+    </ol>
+
+    <h3>Controls</h3>
+    <ul>
+      <li><b>Reference / Live opacity</b> — linear blend weights. With one layer
+          inverted at 50/50, matched pixels collapse to flat mid-gray.</li>
+      <li><b>invert</b> — flip a layer's pixel values. The standard recipe
+          inverts exactly one of the two layers; inverting both undoes the
+          cancellation (matched pixels show as the inverted scene instead of
+          gray).</li>
+      <li>Hover the composite for a magnifying-glass loupe at the cursor.</li>
+      <li><b>↺</b> on the Alignment panel resets the session-best baseline.</li>
+    </ul>
+
+    <h3>Reading the Alignment gauge</h3>
+    <ul>
+      <li>Lighting-invariant gradient cross-correlation. Higher = better.</li>
+      <li>Auto-zooms to the last ~12&nbsp;s window — small adjustments stay visible.</li>
+      <li><span style="color:#4ade80">▲ +0.27</span> means you just beat your session best;
+          <span style="color:#f87171">▼ -0.18</span> means you regressed.</li>
+      <li>"low texture" appears when the scene has too few edges to score reliably.</li>
+    </ul>
+
+    <h3>Episode tags</h3>
+    <p>Tags are read live from <code>meta/episode_labels.json</code> in each dataset
+       (same format the dataviewer writes). Edits there show up here without restart.</p>
+  </div>
+</div>
 
 <script src="/static/aligner.js" defer></script>
 </body>

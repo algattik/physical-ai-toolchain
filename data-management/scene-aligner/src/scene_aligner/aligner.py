@@ -9,31 +9,33 @@ demonstrations.
 
 from __future__ import annotations
 
-import io
+import json
 import os
+import queue
+import re
 import threading
 import time
+from collections import OrderedDict
 from pathlib import Path
 from typing import Optional
 
+import av
 import cv2
 import numpy as np
 import rclpy
 from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.responses import FileResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
+from pydantic import BaseModel, Field, field_validator
 from rclpy.node import Node
 from rclpy.qos import QoSHistoryPolicy, QoSProfile, QoSReliabilityPolicy
 from sensor_msgs.msg import Image
 
-import queue
-from collections import OrderedDict
 from .episodes import (
     episode_video_path,
     find_episode,
     load_episodes,
 )
-from pydantic import BaseModel, Field, field_validator
 
 DATASETS_DIR = Path(os.environ.get('DATASETS_DIR', '/data/sample_datasets'))
 DEFAULT_CAMERA_KEY = os.environ.get('DEFAULT_CAMERA_KEY', '')
@@ -164,8 +166,16 @@ class CameraSubscriber(Node):
             _frame_seq += 1
 
 
+import logging
+
+_LOGGER = logging.getLogger(__name__)
+logging.basicConfig(
+    level=os.environ.get('SCENE_ALIGNER_LOG_LEVEL', 'INFO'),
+    format='%(asctime)s %(levelname)s %(name)s %(message)s',
+)
+
 _camera_node: Optional[CameraSubscriber] = None
-_pending_initial_topic: Optional[str] = None  # set before node exists
+_pending_topics: 'queue.Queue[str]' = queue.Queue()
 
 
 def _ros_thread() -> None:
@@ -173,8 +183,13 @@ def _ros_thread() -> None:
     rclpy.init()
     node = CameraSubscriber()
     _camera_node = node
-    if _pending_initial_topic:
-        node.request_topic(_pending_initial_topic)
+    _LOGGER.info('ROS subscriber initialised')
+    # Drain any topic requests queued before the node existed.
+    try:
+        while True:
+            node.request_topic(_pending_topics.get_nowait())
+    except queue.Empty:
+        pass
     try:
         rclpy.spin(node)
     finally:
@@ -233,9 +248,6 @@ def _resolve_camera(ds_dir: Path, dataset_id: str,
     return cams[0]
 
 
-import json
-import re
-
 _DATE_RE = re.compile(r'(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})Z')
 
 
@@ -272,6 +284,7 @@ def _safe_dataset_dir(dataset_id: str) -> Path:
 def _list_datasets() -> list[dict]:
     """A dataset is any directory containing meta/info.json. Walk recursively."""
     if not DATASETS_DIR.is_dir():
+        _LOGGER.warning('DATASETS_DIR does not exist: %s', DATASETS_DIR)
         return []
     base = DATASETS_DIR.resolve()
     out: list[dict] = []
@@ -297,6 +310,7 @@ def _list_datasets() -> list[dict]:
             'cameras': cams,
             'has_video': bool(cams),
         })
+    _LOGGER.info('Discovered %d dataset(s) under %s', len(out), DATASETS_DIR)
     return out
 
 
@@ -350,9 +364,51 @@ def _episode_labels_map(dataset_id: str) -> dict[int, list[str]]:
     return out
 
 
+def _decode_reference_frame(video_path: Path, target_frame: int, fps: float) -> np.ndarray:
+    """Decode the BGR frame nearest ``target_frame`` from ``video_path``.
+
+    Seeks to ~1 s before the target keyframe (FFmpeg native ``backward=True``)
+    then walks the decoder until the first frame whose presentation
+    timestamp meets or exceeds the target. ``to_ndarray`` is called only
+    on the frame actually returned, so intermediate decodes do not pay
+    the YUV→BGR conversion cost.
+    """
+    target_time = target_frame / fps if fps > 0 else 0.0
+    seek_time = max(0.0, target_time - 1.0)
+    try:
+        with av.open(str(video_path)) as container:
+            stream = next((s for s in container.streams.video if s.type == 'video'), None)
+            if stream is None:
+                raise HTTPException(500, f'No video stream in {video_path}')
+            if seek_time > 0.0 and stream.time_base is not None:
+                container.seek(int(seek_time / float(stream.time_base)),
+                               stream=stream, backward=True)
+            last: Optional[av.VideoFrame] = None
+            for decoded in container.decode(stream):
+                last = decoded
+                if target_time <= 0.0 or decoded.time is None or decoded.time >= target_time:
+                    return decoded.to_ndarray(format='bgr24')
+            if last is not None:
+                return last.to_ndarray(format='bgr24')
+    except av.FFmpegError as exc:
+        raise HTTPException(
+            500, f'Could not decode frame {target_frame} of {video_path}') from exc
+    raise HTTPException(500, f'Could not decode frame {target_frame} of {video_path}')
+
+
 def _load_reference(dataset_id: str, camera_key: str,
-                    episode_idx: int = 0) -> tuple[bytes, np.ndarray]:
-    key = (dataset_id, camera_key, episode_idx)
+                    episode_idx: int = 0,
+                    which: str = 'first') -> tuple[bytes, np.ndarray]:
+    """Decode a reference frame for ``(dataset, camera, episode, which)``.
+
+    ``which`` is ``'first'`` (default — frame at ``from_timestamp``) or
+    ``'last'`` (frame at ``from_timestamp + (length - 1) / fps``). Both
+    cache safely: the key is ``(dataset_id, camera_key, episode_idx, which)``
+    and each tuple maps to a single video file + frame index.
+    """
+    if which not in ('first', 'last'):
+        raise HTTPException(400, f'invalid which={which!r}')
+    key = (dataset_id, camera_key, episode_idx, which)
     with _reference_lock:
         cached = _cache_get(_reference_cache, key)
         if cached is not None:
@@ -361,9 +417,11 @@ def _load_reference(dataset_id: str, camera_key: str,
     ds_dir = _safe_dataset_dir(dataset_id)
     fps_meta = float(_read_info(dataset_id).get('fps') or 30.0)
     ep = find_episode(ds_dir, dataset_id, episode_idx, fps=fps_meta)
+    length = 1
     if ep is not None:
         video_path = episode_video_path(ds_dir, camera_key, ep)
         from_ts = ep['cameras'].get(camera_key, {}).get('from_timestamp', 0.0)
+        length = max(1, int(ep.get('length', 1) or 1))
     else:
         # Fallback: chunk-000/file-000, frame 0.
         video_path = _camera_video_path(ds_dir, camera_key)
@@ -372,32 +430,9 @@ def _load_reference(dataset_id: str, camera_key: str,
         raise HTTPException(404, f'No camera video at {video_path}')
 
     target_frame = int(round(from_ts * fps_meta))
-    cap = cv2.VideoCapture(str(video_path))
-    try:
-        # Two-step seek for frame accuracy: jump close, then walk forward.
-        # OpenCV's POS_FRAMES set lands at the prior keyframe and decodes to
-        # the requested frame for FFmpeg backends, but on some builds it can
-        # under- or over-shoot by a few frames. We verify with the actual
-        # decoded position and advance up to a small bounded number of frames
-        # if we landed before the target. If we landed past the target (rare),
-        # we accept it — re-seeking would amplify the error.
-        if target_frame > 0:
-            cap.set(cv2.CAP_PROP_POS_FRAMES, float(target_frame))
-        ok, frame = cap.read()
-        if not ok or frame is None:
-            raise HTTPException(
-                500, f'Could not decode frame {target_frame} of {video_path}')
-        max_walk = 60  # ~2 s at 30 fps, hard cap on cost
-        for _ in range(max_walk):
-            actual = int(round(cap.get(cv2.CAP_PROP_POS_FRAMES))) - 1
-            if actual >= target_frame:
-                break
-            ok, frm = cap.read()
-            if not ok or frm is None:
-                break
-            frame = frm
-    finally:
-        cap.release()
+    if which == 'last':
+        target_frame += length - 1
+    frame = _decode_reference_frame(video_path, target_frame, fps_meta)
 
     ok, buf = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, 90])
     if not ok:
@@ -405,17 +440,21 @@ def _load_reference(dataset_id: str, camera_key: str,
     entry = (bytes(buf), frame)
     with _reference_lock:
         _cache_put(_reference_cache, key, entry, REFERENCE_CACHE_MAX)
+    _LOGGER.info('Decoded reference: %s ep=%d cam=%s which=%s frame=%d (%dx%d)',
+                 dataset_id, episode_idx, camera_key, which, target_frame,
+                 frame.shape[1], frame.shape[0])
     return entry
 
 
 def _load_thumbnail(dataset_id: str, camera_key: str,
-                    episode_idx: int = 0, max_w: int = 320) -> bytes:
-    cache_key = (dataset_id, camera_key, episode_idx)
+                    episode_idx: int = 0, max_w: int = 320,
+                    which: str = 'first') -> bytes:
+    cache_key = (dataset_id, camera_key, episode_idx, which)
     with _reference_lock:
         cached = _cache_get(_thumbnail_cache, cache_key)
     if cached is not None:
         return cached
-    _, frame = _load_reference(dataset_id, camera_key, episode_idx)
+    _, frame = _load_reference(dataset_id, camera_key, episode_idx, which=which)
     h, w = frame.shape[:2]
     if w > max_w:
         scale = max_w / w
@@ -552,8 +591,18 @@ def _placeholder_jpeg() -> bytes:
     return _PLACEHOLDER
 
 
-def _mjpeg_generator():
-    boundary = b'--frame'
+# Single shared composite is produced by a background thread so multiple
+# MJPEG clients (e.g. the main view + the lens loupe) don't each pay the
+# OpenCV blend + JPEG encode cost. Each generator just reads the latest
+# encoded frame.
+_composite_lock = threading.Lock()
+_composite_jpeg: Optional[bytes] = None
+_composite_seq = 0
+
+
+def _composite_loop() -> None:
+    """Background producer: latest live frame + state → JPEG, on a slot."""
+    global _composite_jpeg, _composite_seq
     period = 1.0 / STREAM_FPS if STREAM_FPS > 0 else 0
     next_t = time.monotonic()
     last_score_t = 0.0
@@ -586,17 +635,15 @@ def _mjpeg_generator():
                     with _score_lock:
                         _score_state['low_texture'] = sv is None
                 except Exception:
-                    pass
+                    _LOGGER.exception('alignment score failed')
             ok, buf = cv2.imencode('.jpg', composed,
                                    [cv2.IMWRITE_JPEG_QUALITY, JPEG_QUALITY])
             jpg = bytes(buf) if ok else None
 
         if jpg is not None:
-            chunk = (boundary + b'\r\n'
-                     b'Content-Type: image/jpeg\r\n'
-                     b'Content-Length: ' + str(len(jpg)).encode() + b'\r\n\r\n'
-                     + jpg + b'\r\n')
-            yield chunk
+            with _composite_lock:
+                _composite_jpeg = jpg
+                _composite_seq += 1
 
         next_t += period
         sleep = next_t - time.monotonic()
@@ -604,6 +651,37 @@ def _mjpeg_generator():
             time.sleep(sleep)
         else:
             next_t = time.monotonic()
+
+
+def _mjpeg_generator(client_addr: str = '?'):
+    """Per-client MJPEG generator — reads the shared composite slot."""
+    boundary = b'--frame'
+    period = 1.0 / STREAM_FPS if STREAM_FPS > 0 else 0
+    last_seen = -1
+    next_t = time.monotonic()
+    _LOGGER.info('MJPEG client connected: %s', client_addr)
+    try:
+        while True:
+            with _composite_lock:
+                seq = _composite_seq
+                jpg = _composite_jpeg
+            if jpg is not None and seq != last_seen:
+                last_seen = seq
+                chunk = (boundary + b'\r\n'
+                         b'Content-Type: image/jpeg\r\n'
+                         b'Content-Length: ' + str(len(jpg)).encode() + b'\r\n\r\n'
+                         + jpg + b'\r\n')
+                yield chunk
+            next_t += period
+            sleep = next_t - time.monotonic()
+            if sleep > 0:
+                time.sleep(sleep)
+            else:
+                next_t = time.monotonic()
+    except (GeneratorExit, BrokenPipeError, ConnectionError):
+        pass
+    finally:
+        _LOGGER.info('MJPEG client disconnected: %s', client_addr)
 
 
 # ---------------------------------------------------------------------------
@@ -615,8 +693,10 @@ from contextlib import asynccontextmanager
 
 @asynccontextmanager
 async def _lifespan(_app: FastAPI):
-    t = threading.Thread(target=_ros_thread, name='rclpy-spin', daemon=True)
-    t.start()
+    t_ros = threading.Thread(target=_ros_thread, name='rclpy-spin', daemon=True)
+    t_ros.start()
+    t_comp = threading.Thread(target=_composite_loop, name='composite', daemon=True)
+    t_comp.start()
     yield
     if rclpy.ok():
         rclpy.shutdown()
@@ -639,6 +719,10 @@ async def _security_headers(request, call_next):
         "media-src 'self' blob:; "
         "script-src 'self'; "
         "style-src 'self'; "
+        # Allow JS-driven element.style.X assignments (slider widths, loupe
+        # position, sparkline updates) while still blocking <style> blocks
+        # and stylesheets from anywhere other than 'self'.
+        "style-src-attr 'unsafe-inline'; "
         "frame-ancestors 'none'; base-uri 'none'; form-action 'self'")
     resp.headers.setdefault('X-Content-Type-Options', 'nosniff')
     resp.headers.setdefault('Referrer-Policy', 'no-referrer')
@@ -786,12 +870,15 @@ def api_episode_info(dataset: str = Query(..., min_length=1),
 @app.get('/api/episode/thumbnail')
 def api_episode_thumbnail(dataset: str = Query(..., min_length=1),
                           episode: int = Query(...),
-                          camera: Optional[str] = None) -> Response:
+                          camera: Optional[str] = None,
+                          which: str = Query('first')) -> Response:
+    if which not in ('first', 'last'):
+        raise HTTPException(400, f'invalid which={which!r}')
     ds_dir = _safe_dataset_dir(dataset)
     cam = _resolve_camera(ds_dir, dataset, camera)
     if not cam:
         raise HTTPException(404, f'No video features in {dataset}')
-    return Response(content=_load_thumbnail(dataset, cam, episode),
+    return Response(content=_load_thumbnail(dataset, cam, episode, which=which),
                     media_type='image/jpeg',
                     headers={'Cache-Control': 'public, max-age=3600'})
 
@@ -889,13 +976,15 @@ def _apply_active_topic() -> None:
     """Re-subscribe ROS to the topic implied by current camera state.
 
     Safe to call from any thread: enqueues the request; the ROS executor
-    applies it on its own timer callback.
+    applies it on its own timer callback. If called before the ROS thread
+    has constructed the node, the request is buffered in ``_pending_topics``
+    and drained once the node exists.
     """
-    global _pending_initial_topic
-    cam = _state.get('camera') or ''
+    with _state_lock:
+        cam = _state.get('camera') or ''
     topic = _topic_for_camera(cam) if cam else ''
     if _camera_node is None:
-        _pending_initial_topic = topic
+        _pending_topics.put(topic)
         return
     _camera_node.request_topic(topic)
 
@@ -984,9 +1073,10 @@ def api_score(since: float = 0.0) -> dict:
 
 
 @app.get('/stream.mjpg')
-def stream() -> StreamingResponse:
+def stream(request: Request) -> StreamingResponse:
+    client = f'{request.client.host}:{request.client.port}' if request.client else '?'
     return StreamingResponse(
-        _mjpeg_generator(),
+        _mjpeg_generator(client),
         media_type='multipart/x-mixed-replace; boundary=frame',
         headers={'Cache-Control': 'no-store'},
     )

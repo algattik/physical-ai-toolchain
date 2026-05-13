@@ -32,7 +32,7 @@
       }),
     }).then(r => r.ok ? r.json() : null).then(s => {
       if (!s) return;
-      $('topic').textContent = s.active_topic ? '🛰 ' + s.active_topic : '';
+      $('topic').textContent = s.active_topic ? s.active_topic : '';
       // Clear local sparkline whenever the server confirms a selection change.
       if (s.dataset !== window.__lastDataset || s.camera !== window.__lastCamera || s.episode !== window.__lastEpisode) {
         rawPoints.length = 0; smoothPoints.length = 0;
@@ -79,6 +79,11 @@
     document.querySelectorAll('.card').forEach(c => {
       c.classList.toggle('active', c.dataset.id === ds.id);
     });
+    // Enable the reference controls now that a reference is loaded.
+    document.querySelectorAll('label.ref-ctl').forEach(el => el.classList.add('enabled'));
+    $('ref-op').disabled = false;
+    $('invert-ref').disabled = false;
+    $('score').classList.remove('hidden');
     pushState();
   }
 
@@ -203,6 +208,10 @@
     <div class="topbar">
       <h2 id="ep-title">Episodes</h2>
       <div style="display:flex;gap:.5rem;align-items:center">
+        <label style="color:#888;font-size:.8rem">camera
+          <select id="ep-camera"
+                  style="background:#2a2a2a;color:#ddd;border:1px solid #444;border-radius:6px;padding:.25rem .4rem;font:inherit;margin-left:.3rem"></select>
+        </label>
         <input id="ep-search" type="search" placeholder="Filter by index or task…"
                style="background:#2a2a2a;color:#ddd;border:1px solid #444;border-radius:6px;padding:.3rem .6rem;font:inherit"/>
         <button class="btn ghost" id="ep-back">← Datasets</button>
@@ -214,11 +223,29 @@
   document.body.appendChild(epModal);
 
   let epDataset = null;
+  let epCamera = '';
   let allEpisodes = [];
   let epAvailableLabels = [];
-  let epActiveLabelFilter = new Set();   // label -> include if set non-empty
-  let epShowUnlabeled = true;
+  let epActiveLabelFilter = new Set();
+  let epIncludeUnlabeled = false;
+  let epShowDetails = false;
   let epObserver = null;
+
+  function populateEpCameras(ds, prefer) {
+    const sel = $('ep-camera');
+    sel.innerHTML = '';
+    (ds.cameras || []).forEach(k => {
+      const o = document.createElement('option');
+      o.value = k; o.textContent = shortCam(k); o.title = k;
+      sel.appendChild(o);
+    });
+    let pick = '';
+    if (prefer && (ds.cameras || []).includes(prefer)) pick = prefer;
+    else if ((ds.cameras || []).length) pick = ds.cameras[0];
+    sel.value = pick;
+    sel.disabled = (ds.cameras || []).length <= 1;
+    epCamera = pick;
+  }
 
   function openEpisodes(ds) {
     epDataset = ds;
@@ -228,7 +255,8 @@
     epModal.classList.add('open');
     document.getElementById('ep-search').value = '';
     epActiveLabelFilter = new Set();
-    epShowUnlabeled = true;
+    epIncludeUnlabeled = false;
+    populateEpCameras(ds, currentCamera);
     fetch(`/api/episodes?dataset=${encodeURIComponent(ds.id)}`)
       .then(r => r.json())
       .then(d => {
@@ -248,10 +276,14 @@
     document.getElementById('modal').classList.add('open');
   });
   document.getElementById('ep-search').addEventListener('input', applyEpFilters);
+  document.getElementById('ep-camera').addEventListener('change', () => {
+    epCamera = document.getElementById('ep-camera').value;
+    applyEpFilters();
+  });
 
   function renderFilterBar() {
     const bar = document.getElementById('ep-filterbar');
-    if (!epAvailableLabels.length) { bar.innerHTML = ''; return; }
+    if (!epAvailableLabels.length && !allEpisodes.length) { bar.innerHTML = ''; return; }
     const counts = Object.create(null);
     let unlabeled = 0;
     for (const ep of allEpisodes) {
@@ -267,17 +299,24 @@
              `<span class="${tagCls}" style="margin-right:4px">${esc(lbl)}</span>` +
              `<span style="color:#888;font-size:0.7rem">${n}</span></span>`;
     }).join('');
-    const unCls = 'toggle ' + (epShowUnlabeled ? 'on' : '');
+    const unCls = 'toggle ' + (epIncludeUnlabeled ? 'on' : '');
+    const detCls = 'toggle ' + (epShowDetails ? 'on' : '');
     bar.innerHTML =
-      `<span style="color:#666">filter:</span>${chips}` +
+      `<span style="color:#666">tags:</span>${chips}` +
       `<span class="${unCls}" data-lbl="__none__">unlabeled ` +
       `<span style="color:#888;font-size:0.7rem">${unlabeled}</span></span>` +
-      `<span class="count" id="ep-count"></span>`;
-    bar.querySelectorAll('.toggle').forEach(el => {
+      `<span class="count" id="ep-count"></span>` +
+      `<label class="ep-display"><input type="checkbox" data-lbl="__details__"${epShowDetails ? ' checked' : ''}> show details</label>`;
+    bar.querySelectorAll('.toggle, input[data-lbl]').forEach(el => {
       el.addEventListener('click', () => {
         const lbl = el.dataset.lbl;
         if (lbl === '__none__') {
-          epShowUnlabeled = !epShowUnlabeled;
+          epIncludeUnlabeled = !epIncludeUnlabeled;
+        } else if (lbl === '__details__') {
+          epShowDetails = !epShowDetails;
+          document.getElementById('ep-grid').classList.toggle('with-details', epShowDetails);
+          renderFilterBar();
+          return;
         } else if (epActiveLabelFilter.has(lbl)) {
           epActiveLabelFilter.delete(lbl);
         } else {
@@ -299,8 +338,9 @@
         if (!matches) return false;
       }
       const labels = ep.labels || [];
-      if (labels.length === 0) return epShowUnlabeled;
-      if (epActiveLabelFilter.size === 0) return true;
+      const anyFilter = epActiveLabelFilter.size > 0 || epIncludeUnlabeled;
+      if (!anyFilter) return true;
+      if (labels.length === 0) return epIncludeUnlabeled;
       return labels.some(t => epActiveLabelFilter.has(t));
     });
     const cEl = document.getElementById('ep-count');
@@ -315,14 +355,16 @@
     epObserver = new IntersectionObserver(entries => {
       for (const e of entries) {
         if (e.isIntersecting) {
-          const img = e.target.querySelector('img[data-src]');
-          if (img) { img.src = img.dataset.src; img.removeAttribute('data-src'); }
+          e.target.querySelectorAll('img[data-src]').forEach(img => {
+            img.src = img.dataset.src;
+            img.removeAttribute('data-src');
+          });
           epObserver.unobserve(e.target);
         }
       }
     }, { rootMargin: '300px' });
 
-    const cam = currentCamera || (epDataset.cameras || [])[0] || '';
+    const cam = epCamera || (epDataset.cameras || [])[0] || '';
     const fps = epDataset.fps || 30;
     eps.forEach(ep => {
       const card = document.createElement('div');
@@ -334,19 +376,32 @@
       const tagsHtml = labels.length
         ? labels.map(t => `<span class="tag ${esc(t.toLowerCase())}">${esc(t)}</span>`).join('')
         : '<span class="tag unlabeled">unlabeled</span>';
+      const cm = (ep.cameras || {})[cam] || {};
+      const ts = (cm.from_timestamp != null)
+        ? `t=${(cm.from_timestamp).toFixed(2)}s..${(cm.to_timestamp).toFixed(2)}s`
+        : '';
+      const detailsHtml = `
+          <div class="details">
+            <div>frames ${esc(ep.dataset_from_index)}–${esc(ep.dataset_to_index)}</div>
+            ${ts ? `<div>${esc(ts)}</div>` : ''}
+            <div>chunk ${esc(cm.chunk_index ?? '—')} / file ${esc(cm.file_index ?? '—')}</div>
+          </div>`;
+      const thumbBase = `/api/episode/thumbnail?dataset=${encodeURIComponent(epDataset.id)}&episode=${ep.idx}${tparam}`;
       card.innerHTML = `
         <div class="media">
-          <img data-src="/api/episode/thumbnail?dataset=${encodeURIComponent(epDataset.id)}&episode=${ep.idx}${tparam}" alt="ep ${esc(ep.idx)}">
+          <div class="thumb"><img data-src="${thumbBase}&which=first" alt="ep ${esc(ep.idx)} first"><span class="badge">first</span></div>
+          <div class="thumb"><img data-src="${thumbBase}&which=last"  alt="ep ${esc(ep.idx)} last"><span class="badge">last</span></div>
         </div>
         <div class="body">
           <div class="idx">ep ${esc(String(ep.idx).padStart(4,'0'))}</div>
           <div class="meta">${esc(ep.length)} frames · ${esc(dur.toFixed(1))}s</div>
           <div class="task" title="${esc(taskStr)}">${esc(taskStr)}</div>
           <div class="tags">${tagsHtml}</div>
+          ${detailsHtml}
         </div>`;
       card.addEventListener('click', () => {
         currentEpisode = ep.idx;
-        setActive(epDataset, currentCamera);
+        setActive(epDataset, epCamera);
         closeEpisodes();
       });
       // Hover preview: load chunk MP4, jump to from_ts, loop within episode.
@@ -359,10 +414,26 @@
         if (hoverTimer) { clearTimeout(hoverTimer); hoverTimer = null; }
         const v = media.querySelector('video');
         if (v) { v.pause(); v.removeAttribute('src'); v.load(); v.remove(); }
-        const i = media.querySelector('img'); if (i) i.style.display = '';
+        media.querySelectorAll('.time, .scrub, .speed').forEach(e => e.remove());
+        media.querySelectorAll('.thumb').forEach(t => t.style.display = '');
       });
       grid.appendChild(card);
       epObserver.observe(card);
+    });
+    // IntersectionObserver only fires when an element transitions INTO the
+    // viewport; cards already visible at observe-time wouldn't trigger.
+    // Force-load thumbnails for those.
+    requestAnimationFrame(() => {
+      const vh = window.innerHeight;
+      grid.querySelectorAll('.ep-card').forEach(card => {
+        const r = card.getBoundingClientRect();
+        if (r.top < vh + 300 && r.bottom > -300) {
+          card.querySelectorAll('img[data-src]').forEach(img => {
+            img.src = img.dataset.src;
+            img.removeAttribute('data-src');
+          });
+        }
+      });
     });
   }
 
@@ -380,11 +451,9 @@
       v.currentTime = fromTs;
       v.playbackRate = PLAYBACK_RATES[currentRateIdx];
     });
-    v.addEventListener('timeupdate', () => {
-      if (v.currentTime >= toTs) v.currentTime = fromTs;
-    });
-    media.querySelector('img').style.display = 'none';
+    media.querySelectorAll('.thumb').forEach(t => t.style.display = 'none');
     media.appendChild(v);
+    attachVideoControls(media, v, { from: fromTs, to: toTs });
   }
   // ---------------- /Episode picker -----------------
 
@@ -442,11 +511,24 @@
     video.src = `/api/dataset/${encodeURI(ds.id)}/video`;
     video.autoplay = true; video.muted = true; video.loop = true;
     video.playsInline = true; video.controls = false;
-    const applyRate = () => { video.playbackRate = PLAYBACK_RATES[currentRateIdx]; };
-    video.addEventListener('loadedmetadata', applyRate);
+    video.addEventListener('loadedmetadata', () => {
+      video.playbackRate = PLAYBACK_RATES[currentRateIdx];
+    });
     media.querySelector('img').style.display = 'none';
     const p = media.querySelector('.play'); if (p) p.style.display = 'none';
     media.appendChild(video);
+    attachVideoControls(media, video);
+  }
+
+  // Adds time/scrub/speed controls to a `.media` already containing a <video>.
+  // opts.from / opts.to bound the scrubber and (when both finite) clamp
+  // playback to a sub-range, looping back to `from` on overrun. Without
+  // bounds, scrubber spans the whole file and looping is left to the caller
+  // (e.g. native <video loop>).
+  function attachVideoControls(media, video, opts) {
+    opts = opts || {};
+    const from = (typeof opts.from === 'number') ? opts.from : 0;
+    const to   = (typeof opts.to   === 'number' && isFinite(opts.to)) ? opts.to : null;
 
     const time = document.createElement('div');
     time.className = 'time';
@@ -462,21 +544,18 @@
     speed.addEventListener('click', e => {
       e.stopPropagation();
       currentRateIdx = (currentRateIdx + 1) % PLAYBACK_RATES.length;
-      applyRate();
-      refreshSpeed();
-      // Update any other open preview cards.
-      document.querySelectorAll('.card .media .speed').forEach(b => {
-        b.textContent = PLAYBACK_RATES[currentRateIdx] + '×';
-      });
-      document.querySelectorAll('.card .media video').forEach(v => {
-        v.playbackRate = PLAYBACK_RATES[currentRateIdx];
-      });
+      const r = PLAYBACK_RATES[currentRateIdx];
+      document.querySelectorAll('.media .speed').forEach(b => { b.textContent = r + '×'; });
+      document.querySelectorAll('.media video').forEach(v => { v.playbackRate = r; });
     });
     media.appendChild(speed);
 
     const scrub = document.createElement('input');
     scrub.type = 'range'; scrub.className = 'scrub';
-    scrub.min = '0'; scrub.max = '0'; scrub.step = '0.1'; scrub.value = '0';
+    scrub.min = String(from);
+    scrub.max = String(to != null ? to : from);
+    scrub.step = '0.05';
+    scrub.value = String(from);
     media.appendChild(scrub);
 
     let scrubbing = false;
@@ -488,21 +567,34 @@
     scrub.addEventListener('click', e => e.stopPropagation());
 
     const update = () => {
-      const dur = isFinite(video.duration) ? video.duration : 0;
-      if (scrub.max !== String(dur)) scrub.max = String(dur);
+      const max = (to != null) ? to : (isFinite(video.duration) ? video.duration : 0);
+      const maxStr = String(max);
+      if (scrub.max !== maxStr) scrub.max = maxStr;
       if (!scrubbing) scrub.value = String(video.currentTime);
-      time.textContent = fmtTime(video.currentTime) + ' / ' + fmtTime(video.duration)
+      const cur = Math.max(0, video.currentTime - from);
+      const span = Math.max(0, max - from);
+      time.textContent = fmtTime(cur) + ' / ' + fmtTime(span)
                        + ` · ${PLAYBACK_RATES[currentRateIdx]}×`;
     };
     video.addEventListener('timeupdate', update);
     video.addEventListener('loadedmetadata', update);
+
+    if (to != null) {
+      video.addEventListener('timeupdate', () => {
+        if (video.currentTime >= to) video.currentTime = from;
+      });
+    }
   }
 
   $('open-picker').addEventListener('click', () => $('modal').classList.add('open'));
   $('close-picker').addEventListener('click', () => $('modal').classList.remove('open'));
+  $('open-help').addEventListener('click', () => $('help-modal').classList.add('open'));
+  $('close-help').addEventListener('click', () => $('help-modal').classList.remove('open'));
   document.addEventListener('keydown', e => {
     if (e.key === 'Escape') {
-      if ($('drawer').classList.contains('open')) $('drawer').classList.remove('open');
+      if ($('help-modal').classList.contains('open')) $('help-modal').classList.remove('open');
+      else if ($('drawer').classList.contains('open')) $('drawer').classList.remove('open');
+      else if ($('ep-modal').classList.contains('open')) $('ep-modal').classList.remove('open');
       else $('modal').classList.remove('open');
     }
   });
@@ -511,7 +603,14 @@
     const grid = $('grid');
     grid.innerHTML = '';
     data.datasets.forEach(ds => grid.appendChild(makeCard(ds)));
-    // Don't auto-select — operator must pick an episode.
+    // Auto-subscribe to the first camera of the first dataset so the live
+    // feed shows immediately, even before the operator picks an episode.
+    // The reference overlay stays empty until they choose one.
+    const firstWithCam = data.datasets.find(d => (d.cameras || []).length > 0);
+    if (firstWithCam && !currentCamera) {
+      currentCamera = firstWithCam.cameras[0];
+      populateCameras(firstWithCam, currentCamera);
+    }
     pushState();
   });
 
@@ -577,18 +676,25 @@
     return `rgb(${r},${g},80)`;
   }
 
+  let sparklineSeq = 0;
+
   $('score-reset').addEventListener('click', () => {
+    sparklineSeq++;
     rawPoints.length = 0;
     smoothPoints.length = 0;
     sessionBest = null;
     lastSmoothSeen = null;
+    lastScoreT = 0;
     drawSpark(0, 1);
   });
 
   async function pollScore() {
+    if ($('score').classList.contains('hidden')) return;
+    const mySeq = sparklineSeq;
     try {
       const r = await fetch('/api/score?since=' + lastScoreT);
       const d = await r.json();
+      if (mySeq !== sparklineSeq) return;  // reset happened mid-flight
       if (d.history && d.history.length) {
         for (const [t, v] of d.history) {
           rawPoints.push(v);
@@ -620,7 +726,7 @@
       lo = Math.max(0, lo - margin);
       hi = Math.min(1, hi + margin);
 
-      $('score-value').textContent = (vSmooth * 100).toFixed(2) + '%';
+      $('score-value').textContent = vSmooth.toFixed(3);
       const rel = (vSmooth - lo) / Math.max(hi - lo, 1e-9);
       $('score-value').style.color = colorForRel(Math.max(0, Math.min(1, rel)));
 
@@ -639,10 +745,10 @@
         dEl.className = 'delta flat'; dEl.textContent = '= best';
       } else if (dBest > 0) {
         dEl.className = 'delta up';
-        dEl.textContent = '▲ +' + (dBest * 100).toFixed(2);
+        dEl.textContent = '▲ +' + dBest.toFixed(3);
       } else {
         dEl.className = 'delta down';
-        dEl.textContent = '▼ ' + (dBest * 100).toFixed(2);
+        dEl.textContent = '▼ ' + dBest.toFixed(3);
       }
 
       $('score-meta').textContent = '';

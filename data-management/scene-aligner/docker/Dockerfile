@@ -22,10 +22,21 @@ WORKDIR /app
 COPY pyproject.toml /app/
 COPY src/ /app/src/
 
-# pydantic v2 (apt ships v1) and pyarrow (no apt package on Ubuntu 24.04).
-# typing_extensions is apt-installed and pip can't uninstall it; use
-# --ignore-installed so pip overlays a newer copy in /usr/local.
+# Why these three are pip-installed instead of apt:
+#   - pydantic: apt ships v1, we need v2.
+#   - pyarrow: no apt package on Ubuntu 24.04.
+#   - av:      no apt package on Ubuntu 24.04.
+#
+# Why --ignore-installed (load-bearing, do not remove):
+# pydantic 2.x requires typing_extensions >= 4.12, but the base image's
+# python3-fastapi (apt) pulls in python3-typing-extensions 4.10. Apt-installed
+# wheels have no RECORD file, so pip refuses to uninstall the older copy
+# ("Cannot uninstall ... no RECORD file") and aborts. --ignore-installed tells
+# pip to skip the uninstall and write a fresh copy under /usr/local, which
+# takes precedence on sys.path. The flag is harmless for pyarrow and av (no
+# version conflict) but removing it breaks the pydantic install.
 RUN pip3 install --no-cache-dir --break-system-packages --ignore-installed \
+        "av==17.0.1" \
         "pyarrow==24.0.0" \
         "pydantic==2.13.4"
 
