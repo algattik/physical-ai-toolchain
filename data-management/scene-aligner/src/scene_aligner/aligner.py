@@ -165,6 +165,10 @@ class CameraSubscriber(Node):
             _latest_frame = frame
             _frame_seq += 1
 
+    def list_topics(self) -> list[tuple[str, list[str]]]:
+        """Return all available ROS 2 topics and their message types."""
+        return self.get_topic_names_and_types()
+
 
 import logging
 
@@ -184,6 +188,13 @@ def _ros_thread() -> None:
     node = CameraSubscriber()
     _camera_node = node
     _LOGGER.info('ROS subscriber initialised')
+    
+    # Enumerate all available topics at startup
+    topics = node.list_topics()
+    _LOGGER.info('Available ROS 2 topics (%d):', len(topics))
+    for topic_name, topic_types in sorted(topics):
+        _LOGGER.info('  %s: %s', topic_name, ', '.join(topic_types))
+    
     # Drain any topic requests queued before the node existed.
     try:
         while True:

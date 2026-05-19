@@ -11,6 +11,7 @@ ENV DEBIAN_FRONTEND=noninteractive \
 RUN apt-get update && apt-get install -y --no-install-recommends \
         ros-jazzy-rclpy \
         ros-jazzy-sensor-msgs \
+        ros-jazzy-rmw-cyclonedds-cpp \
         python3-pip \
         python3-opencv \
         python3-fastapi \
@@ -45,4 +46,5 @@ RUN pip3 install --no-cache-dir --break-system-packages --no-deps -e .
 
 EXPOSE 8080
 
-# ros entrypoint sources /opt/ros/jazzy/setup.bash; commands come from compose.
+ENTRYPOINT ["/ros_entrypoint.sh"]
+CMD ["python3", "-m", "uvicorn", "scene_aligner.aligner:app", "--host", "0.0.0.0", "--port", "8080"]
