@@ -8,8 +8,12 @@ WORKDIR /app
 RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg \
     && rm -rf /var/lib/apt/lists/*
 
-# Install uv (pinned by hash for OSSF Scorecard Pinned-Dependencies; covers all uv 0.10.9 wheels)
-RUN pip install --no-cache-dir --require-hashes uv==0.10.9 \
+# Install uv (pinned by hash for OSSF Scorecard Pinned-Dependencies; covers all uv 0.10.9 wheels).
+# pip 26 dropped --hash as a CLI flag, so hashes must live in a requirements file. The file is
+# materialised in-layer via heredoc to keep the hashes DRY (single source of truth in this Dockerfile).
+RUN <<EOF
+cat > /tmp/uv-requirements.txt <<'REQ'
+uv==0.10.9 \
     --hash=sha256:0649f83fa0f44f18627c00b2a9a60e5c3486a34799b2c874f2b3945b76048a67 \
     --hash=sha256:880dd4cffe4bd184e8871ddf4c7d3c3b042e1f16d2682310644aa8d61eaea3e6 \
     --hash=sha256:a7a784254380552398a6baf4149faf5b31a4003275f685c28421cf8197178a08 \
@@ -28,6 +32,10 @@ RUN pip install --no-cache-dir --require-hashes uv==0.10.9 \
     --hash=sha256:af79552276d8bd622048ab2d67ec22120a6af64d83963c46b1482218c27b571f \
     --hash=sha256:47e18a0521d76293d4f60d129f520b18bddf1976b4a47b50f0fcb04fb6a9d40f \
     --hash=sha256:31e76ae92e70fec47c3efab0c8094035ad7a578454482415b496fa39fc4d685c
+REQ
+pip install --no-cache-dir --require-hashes -r /tmp/uv-requirements.txt
+rm /tmp/uv-requirements.txt
+EOF
 
 # Copy dependency manifests
 COPY pyproject.toml uv.lock ./
