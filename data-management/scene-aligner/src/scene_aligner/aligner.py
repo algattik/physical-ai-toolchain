@@ -1201,6 +1201,18 @@ async def _lifespan(_app: FastAPI):
 
 app = FastAPI(title='Scene Aligner', lifespan=_lifespan)
 
+# Allow cross-origin access so the app works inside iframes served from a
+# different port on the same host (e.g. a dashboard on :3000 embedding the
+# scene-aligner on :8000). Internal tool on a private network — wide-open.
+from fastapi.middleware.cors import CORSMiddleware  # noqa: E402
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=['*'],
+    allow_methods=['*'],
+    allow_headers=['*'],
+)
+
 _STATIC_DIR = Path(__file__).parent / 'static'
 app.mount('/static', StaticFiles(directory=str(_STATIC_DIR)), name='static')
 
@@ -1220,7 +1232,9 @@ async def _security_headers(request, call_next):
         # position, sparkline updates) while still blocking <style> blocks
         # and stylesheets from anywhere other than 'self'.
         "style-src-attr 'unsafe-inline'; "
-        "frame-ancestors 'none'; base-uri 'none'; form-action 'self'")
+        # Allow embedding in any parent frame (internal tool on private net).
+        "frame-ancestors *; "
+        "base-uri 'none'; form-action 'self'")
     resp.headers.setdefault('X-Content-Type-Options', 'nosniff')
     resp.headers.setdefault('Referrer-Policy', 'no-referrer')
     return resp
