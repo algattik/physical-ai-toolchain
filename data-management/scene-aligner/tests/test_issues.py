@@ -81,3 +81,21 @@ def test_displayable_encodings_match_decoder_set():
     # Probe filter must stay in sync with the live decoder.
     decoder_supported = {'bgr8', 'rgb8', 'bgra8', 'rgba8', 'mono8', '8uc1'}
     assert aligner.DISPLAYABLE_ENCODINGS == decoder_supported
+
+
+def test_topic_kwarg_attaches_topic_to_entry():
+    # When a journal entry comes from a topic-specific source, the UI uses
+    # the 'topic' field to drop stale toasts on topic change.
+    aligner._record_issue(
+        'warning', 'ros_decode', 'decode failed',
+        key='decode:/sensor/cam/depth:bad',
+        topic='/sensor/cam/depth')
+    aligner._record_issue('error', 'dataset_io', 'read failed')
+    _, items = aligner._issues_since(since=0)
+    assert len(items) == 2
+    by_src = {it['source']: it for it in items}
+    assert by_src['ros_decode']['topic'] == '/sensor/cam/depth'
+    # Issues without a topic still have the key for downstream consumers,
+    # but the topic defaults to empty so the UI's "stale toast" filter
+    # leaves them alone.
+    assert by_src['dataset_io']['topic'] == ''

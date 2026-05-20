@@ -63,21 +63,26 @@
     sel.value = pick;
     sel.disabled = (ds.cameras || []).length <= 1;
     currentCamera = pick;
-    // Auto-pick the ROS topic most similar to the chosen camera.
+    // Dataset load is a fresh-start signal: re-enable auto-pick so the
+    // ROS-topic dropdown can re-target the new camera.
+    autoPickEnabled = true;
     const auto = pickBestTopic(currentCamera);
     if (auto && auto !== currentTopic) {
       currentTopic = auto;
       const tsel = $('ros-topic');
       if (tsel) tsel.value = auto;
+      onTopicChanged(auto);
     }
   }
   $('camera').addEventListener('change', () => {
     currentCamera = $('camera').value;
-    // Auto-pick the ROS topic most similar to the newly selected camera.
+    // Camera change is a strong signal to re-auto-pick the topic.
+    autoPickEnabled = true;
     const auto = pickBestTopic(currentCamera);
     if (auto && auto !== currentTopic) {
       currentTopic = auto;
       $('ros-topic').value = auto;
+      onTopicChanged(auto);
     }
     pushState();
   });
@@ -106,6 +111,11 @@
   let availableTopics = [];        // [name, ...]  (displayable only)
   let topicProbes = {};            // name -> probe object
   let topicMeta = {};              // name -> {publisher_count, displayable, ...}
+  // The user's explicit choice in the ROS-topic dropdown is sticky: once they
+  // pick a specific topic OR '(none)', stop overwriting their selection on
+  // subsequent topic refreshes. Camera/dataset changes flip this back on
+  // because either is a strong signal that re-auto-picking is wanted.
+  let autoPickEnabled = true;
 
   // Categorise a topic path by stream kind. Lower is preferred:
   //   0 = imitation-learning stream (/il/...)        — what datasets are recorded from
@@ -132,19 +142,27 @@
   }
 
   function pickBestTopic(cameraKey) {
-    if (!cameraKey || !availableTopics.length) return '';
-    const short = shortCam(cameraKey);
-    // Sort by (category asc, lcs desc) — the camera-name match must still be
-    // meaningful (>=3 shared chars), otherwise we'd happily pick an unrelated
-    // /il/* topic just because of its category rank.
+    if (!availableTopics.length) return '';
+    const short = cameraKey ? shortCam(cameraKey) : '';
+    // Primary sort key is the category (il > rgb > depth > other); secondary
+    // is the LCS match with the camera name (so we don't grab an /il/* topic
+    // from an unrelated camera). When no dataset/camera is loaded yet, fall
+    // back to alphabetical ordering inside the winning category.
     let best = '', bestScore = -1, bestCat = 99;
     for (const t of availableTopics) {
-      const score = lcsLen(short, t);
-      if (score < 3) continue;
+      const score = short ? lcsLen(short, t) : 0;
+      if (short && score < 3) continue;
       const cat = topicCategory(t);
-      if (cat < bestCat || (cat === bestCat && score > bestScore)) {
-        bestCat = cat; bestScore = score; best = t;
+      let better = false;
+      if (cat < bestCat) better = true;
+      else if (cat === bestCat) {
+        if (short) {
+          if (score > bestScore) better = true;
+        } else if (!best || t.localeCompare(best) < 0) {
+          better = true;
+        }
       }
+      if (better) { bestCat = cat; bestScore = score; best = t; }
     }
     return best;
   }
@@ -208,14 +226,17 @@
       appendGroup('Not displayable', undisplayable);
 
       // Preserve prior selection if still present and not now disabled;
-      // otherwise auto-match to the dataset camera among displayable topics.
+      // otherwise, when auto-pick is enabled, fall back to the category
+      // ranking (works even before any dataset is loaded — see pickBestTopic).
       let pick = '';
       const prevMeta = topicMeta[prev];
       if (prev && prevMeta && prevMeta.displayable !== false) pick = prev;
-      else pick = pickBestTopic(currentCamera);
+      else if (autoPickEnabled) pick = pickBestTopic(currentCamera);
+      else pick = '';
       sel.value = pick;
       if (pick !== currentTopic) {
         currentTopic = pick;
+        onTopicChanged(pick);
         pushState();
       }
     }).catch(err => {
@@ -224,6 +245,9 @@
   }
   $('ros-topic').addEventListener('change', () => {
     currentTopic = $('ros-topic').value;
+    // Explicit user choice (including the '(none)' option) is sticky.
+    autoPickEnabled = false;
+    onTopicChanged(currentTopic);
     pushState();
   });
   $('refresh-topics').addEventListener('click', refreshTopics);
@@ -243,6 +267,7 @@
   function renderToast(entry) {
     const el = document.createElement('div');
     el.className = `toast toast-${entry.level || 'info'}`;
+    if (entry.topic) el.dataset.topic = entry.topic;
     const when = new Date((entry.last_ts || entry.ts) * 1000);
     const hh = String(when.getHours()).padStart(2, '0');
     const mm = String(when.getMinutes()).padStart(2, '0');
@@ -266,6 +291,15 @@
     while (toastContainer.childNodes.length > 8) {
       toastContainer.lastChild.remove();
     }
+  }
+
+  // When the active ROS topic changes, drop any toast that was tied to a
+  // *different* topic — otherwise warnings like "decode failed" for the
+  // previous topic linger in the corner and confuse the user.
+  function clearStaleTopicToasts(activeTopic) {
+    toastContainer.querySelectorAll('.toast[data-topic]').forEach(el => {
+      if (el.dataset.topic && el.dataset.topic !== activeTopic) el.remove();
+    });
   }
 
   function pollIssues() {
@@ -305,6 +339,22 @@
   }
   pollLiveStatus();
   setInterval(pollLiveStatus, 2000);
+
+  // Called whenever the active ROS topic changes — drops stale toasts and
+  // refreshes the live-status badge immediately instead of waiting up to 2 s
+  // for the next poll tick. Defined as a function declaration so the earlier
+  // call sites (camera change, refreshTopics, populateCameras) bind to it
+  // via hoisting.
+  function onTopicChanged(activeTopic) {
+    clearStaleTopicToasts(activeTopic || '');
+    // Optimistically hide the badge and clear any decode-error placeholder
+    // text so the user sees the change immediately. The next poll will
+    // confirm the real status within ~one tick.
+    liveBadge.textContent = activeTopic
+      ? `Waiting for first frame on ${activeTopic}…`
+      : 'No ROS topic selected';
+    pollLiveStatus();
+  }
 
 
   function setActive(ds, preferCamera) {

@@ -301,7 +301,8 @@ class CameraSubscriber(Node):
                 _record_issue(
                     'error', 'ros_subscribe',
                     f'failed to subscribe to {latest}: {exc}',
-                    key=f'subscribe:{latest}')
+                    key=f'subscribe:{latest}',
+                    topic=latest)
                 return
             self.get_logger().info(
                 f'Subscribed to {latest} (QoS: BEST_EFFORT, KEEP_LAST depth=2)')
@@ -315,7 +316,8 @@ class CameraSubscriber(Node):
                         'warning', 'ros_subscribe',
                         f'No publishers currently advertise {latest}. '
                         f'Check topic name spelling, ROS_DOMAIN_ID, and DDS discovery.',
-                        key=f'no-publisher:{latest}')
+                        key=f'no-publisher:{latest}',
+                        topic=latest)
                 for p in pubs:
                     qos = p.qos_profile
                     self.get_logger().info(
@@ -328,7 +330,8 @@ class CameraSubscriber(Node):
                 _record_issue(
                     'warning', 'ros_subscribe',
                     f'discovery query failed for {latest}: {exc}',
-                    key=f'discovery:{latest}')
+                    key=f'discovery:{latest}',
+                    topic=latest)
             global _latest_frame
             with _frame_lock:
                 _latest_frame = None  # invalidate previous camera's frame
@@ -404,7 +407,8 @@ class CameraSubscriber(Node):
                 f'[{self._topic}] decode failed: {reason}; '
                 f'enc={msg.encoding} {msg.width}x{msg.height} step={msg.step} '
                 f'data_len={len(msg.data)}',
-                key=f'decode:{self._topic}:{reason}')
+                key=f'decode:{self._topic}:{reason}',
+                topic=self._topic)
             return
         info = {
             'width': int(msg.width),
@@ -485,6 +489,7 @@ def _record_issue(
     message: str,
     *,
     key: Optional[str] = None,
+    topic: Optional[str] = None,
     extra: Optional[dict] = None,
     throttle_s: float = _ISSUES_THROTTLE_S,
 ) -> None:
@@ -494,9 +499,10 @@ def _record_issue(
     the user sees it without enabling DEBUG) and pushes onto the in-memory
     journal that ``/api/issues`` exposes to the UI.
 
-    ``key`` (default = ``source + message``) governs throttling so that a
-    repeating event doesn't fill the journal. The throttled occurrences are
-    still counted on the last surfaced entry.
+    ``topic`` lets the UI dismiss toasts that became stale when the user
+    switched to a different ROS topic. ``key`` (default = source + message)
+    governs throttling so that a repeating event doesn't fill the journal.
+    The throttled occurrences are still counted on the last surfaced entry.
     """
     global _ISSUES_SEQ
     level = level.lower()
@@ -535,6 +541,7 @@ def _record_issue(
             'source': source,
             'message': message,
             'key': key or message,
+            'topic': topic or '',
             'count': 1,
         }
         if extra:
@@ -1031,26 +1038,37 @@ def _placeholder_jpeg(message: str = 'Waiting for camera...') -> bytes:
         return jpg
 
 
-def _live_status_message() -> str:
-    """Human-readable summary of why no live frame is available right now."""
+def _live_status_message(intended_topic: str = '') -> str:
+    """Human-readable summary of why no live frame is available right now.
+
+    ``intended_topic`` is the topic the *user* asked for (taken from
+    ``_state['topic']``). It may briefly differ from the camera node's actual
+    subscription because ``_apply_pending`` runs on a 50 ms timer; speaking
+    to the intended topic avoids surfacing stale decode-errors from the
+    previous subscription right after the user picks a new one.
+    """
     if _camera_node is None:
         return 'ROS subscriber not yet ready'
     status = _camera_node.get_live_status()
-    topic = status.get('topic') or ''
-    if not topic:
+    actual = status.get('topic') or ''
+    intended = intended_topic or actual
+    if not intended:
         return 'No ROS topic selected'
+    # Subscription hasn't caught up with the user's last pick yet.
+    if intended != actual:
+        return f'Switching to {intended}…'
     if not status.get('subscribed'):
-        return f'Not subscribed to {topic}'
+        return f'Not subscribed to {intended}'
     err = status.get('last_decode_error')
     if err:
-        return (f'Decode failed on {topic}: '
+        return (f'Decode failed on {intended}: '
                 f'encoding {err.get("encoding")!r} '
                 f'{err.get("width")}x{err.get("height")} — {err.get("reason")}')
     pubs = status.get('last_publisher_count')
     if pubs is not None and pubs == 0:
-        return (f'No publishers on {topic} '
+        return (f'No publishers on {intended} '
                 f'(check ROS_DOMAIN_ID and DDS discovery)')
-    return f'Waiting for first frame on {topic}…'
+    return f'Waiting for first frame on {intended}…'
 
 
 # Single shared composite is produced by a background thread so multiple
@@ -1085,7 +1103,7 @@ def _composite_loop() -> None:
                 _LOGGER.info(
                     'No live frame available; serving placeholder. Selected topic=%s',
                     topic)
-            jpg = _placeholder_jpeg(_live_status_message())
+            jpg = _placeholder_jpeg(_live_status_message(st.get('topic') or ''))
         else:
             ref_arr = None
             if st['dataset'] and st['camera']:
@@ -1607,7 +1625,9 @@ def api_live_status() -> dict:
             'status': None,
         }
     status = _camera_node.get_live_status()
-    msg = _live_status_message()
+    with _state_lock:
+        intended = _state.get('topic') or ''
+    msg = _live_status_message(intended)
     has_frame = False
     with _frame_lock:
         has_frame = _latest_frame is not None
@@ -1615,6 +1635,7 @@ def api_live_status() -> dict:
         'ready': True,
         'has_frame': has_frame,
         'message': msg,
+        'intended_topic': intended,
         'status': status,
     }
 
