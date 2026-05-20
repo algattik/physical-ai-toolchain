@@ -101,8 +101,11 @@
     return best;
   }
 
-  // Discovered Image-only topic list (cached from the last /api/topics call).
-  let availableTopics = [];
+  // Discovered Image-only topic list (cached from the last /api/topics call),
+  // along with their probe data so auto-pick can skip non-displayable feeds.
+  let availableTopics = [];        // [name, ...]  (displayable only)
+  let topicProbes = {};            // name -> probe object
+  let topicMeta = {};              // name -> {publisher_count, displayable, ...}
 
   function pickBestTopic(cameraKey) {
     if (!cameraKey || !availableTopics.length) return '';
@@ -116,30 +119,78 @@
     return bestScore >= 3 ? best : '';
   }
 
+  function probeLabel(probe) {
+    if (!probe) return ' (probing…)';
+    if (probe.displayable === true) {
+      const dims = (probe.width && probe.height) ? `${probe.width}×${probe.height}` : '';
+      const enc = probe.encoding || '';
+      return ` — ${enc}${dims ? ' ' + dims : ''}`;
+    }
+    if (probe.displayable === false) {
+      const why = probe.error || probe.encoding || 'unknown';
+      return ` — ✕ ${why}`;
+    }
+    return ' (probing…)';
+  }
+
   function refreshTopics() {
     return fetch('/api/topics').then(r => r.ok ? r.json() : null).then(d => {
       const sel = $('ros-topic');
       const prev = currentTopic || sel.value;
       const all = (d && d.topics) || [];
-      const topics = all.filter(t => (t.types || []).includes('sensor_msgs/msg/Image'));
-      availableTopics = topics.map(t => t.name);
-      sel.innerHTML = `<option value="">(none — ${topics.length} camera topic(s) discovered)</option>`;
-      topics.forEach(t => {
-        const o = document.createElement('option');
-        o.value = t.name;
-        o.textContent = t.name;
-        sel.appendChild(o);
+      const imageTopics = all.filter(t => t.is_image
+                                     || (t.types || []).includes('sensor_msgs/msg/Image'));
+      topicProbes = {};
+      topicMeta = {};
+      const displayable = [];
+      const undisplayable = [];
+      const unknown = [];
+      imageTopics.forEach(t => {
+        topicProbes[t.name] = t.probe || null;
+        topicMeta[t.name] = t.probe || {};
+        if (t.probe && t.probe.displayable === true) displayable.push(t);
+        else if (t.probe && t.probe.displayable === false) undisplayable.push(t);
+        else unknown.push(t);
       });
-      // Preserve prior selection if still present; otherwise auto-match to camera.
+      availableTopics = displayable.map(t => t.name);
+      const total = imageTopics.length;
+      sel.innerHTML = `<option value="">(none — ${displayable.length}/${total} displayable)</option>`;
+      const appendGroup = (label, arr) => {
+        if (!arr.length) return;
+        const og = document.createElement('optgroup');
+        og.label = label;
+        arr.sort((a, b) => a.name.localeCompare(b.name));
+        arr.forEach(t => {
+          const o = document.createElement('option');
+          o.value = t.name;
+          const icon = t.probe && t.probe.displayable === true ? '✓'
+                     : t.probe && t.probe.displayable === false ? '✕'
+                     : '·';
+          o.textContent = `${icon} ${t.name}${probeLabel(t.probe)}`;
+          o.title = t.probe && t.probe.error ? t.probe.error : t.name;
+          if (t.probe && t.probe.displayable === false) o.disabled = true;
+          og.appendChild(o);
+        });
+        sel.appendChild(og);
+      };
+      appendGroup('Displayable', displayable);
+      appendGroup('Probing…', unknown);
+      appendGroup('Not displayable', undisplayable);
+
+      // Preserve prior selection if still present and not now disabled;
+      // otherwise auto-match to the dataset camera among displayable topics.
       let pick = '';
-      if (prev && availableTopics.includes(prev)) pick = prev;
+      const prevMeta = topicMeta[prev];
+      if (prev && prevMeta && prevMeta.displayable !== false) pick = prev;
       else pick = pickBestTopic(currentCamera);
       sel.value = pick;
       if (pick !== currentTopic) {
         currentTopic = pick;
         pushState();
       }
-    }).catch(() => {});
+    }).catch(err => {
+      console.error('refreshTopics failed', err);
+    });
   }
   $('ros-topic').addEventListener('change', () => {
     currentTopic = $('ros-topic').value;
@@ -147,6 +198,84 @@
   });
   $('refresh-topics').addEventListener('click', refreshTopics);
   refreshTopics();
+  // Re-poll every 5s so probe results trickle in and disappearing publishers
+  // are reflected without the user clicking refresh.
+  setInterval(refreshTopics, 5000);
+
+  // ----------------------------------------------------------------------
+  // Issue toasts: poll /api/issues, surface every server-side warning.
+  // ----------------------------------------------------------------------
+  let lastIssueSeq = 0;
+  const toastContainer = document.createElement('div');
+  toastContainer.id = 'toasts';
+  document.body.appendChild(toastContainer);
+
+  function renderToast(entry) {
+    const el = document.createElement('div');
+    el.className = `toast toast-${entry.level || 'info'}`;
+    const when = new Date((entry.last_ts || entry.ts) * 1000);
+    const hh = String(when.getHours()).padStart(2, '0');
+    const mm = String(when.getMinutes()).padStart(2, '0');
+    const ss = String(when.getSeconds()).padStart(2, '0');
+    const count = entry.count > 1 ? ` ×${entry.count}` : '';
+    el.innerHTML = `
+      <div class="toast-head">
+        <span class="toast-src">${esc(entry.source)}</span>
+        <span class="toast-time">${hh}:${mm}:${ss}${esc(count)}</span>
+        <button class="toast-x" aria-label="dismiss">✕</button>
+      </div>
+      <div class="toast-body">${esc(entry.message)}</div>`;
+    el.querySelector('.toast-x').addEventListener('click', () => el.remove());
+    toastContainer.prepend(el);
+    // Auto-dismiss: info 8s, warning 20s, error stays until clicked.
+    const ttl = entry.level === 'info' ? 8000
+              : entry.level === 'warning' ? 20000
+              : 0;
+    if (ttl > 0) setTimeout(() => el.remove(), ttl);
+    // Cap to 8 visible toasts at once.
+    while (toastContainer.childNodes.length > 8) {
+      toastContainer.lastChild.remove();
+    }
+  }
+
+  function pollIssues() {
+    fetch(`/api/issues?since=${lastIssueSeq}`)
+      .then(r => r.ok ? r.json() : null)
+      .then(d => {
+        if (!d) return;
+        lastIssueSeq = d.seq || lastIssueSeq;
+        (d.issues || []).forEach(renderToast);
+      })
+      .catch(err => console.warn('pollIssues failed', err));
+  }
+  pollIssues();
+  setInterval(pollIssues, 2000);
+
+  // ----------------------------------------------------------------------
+  // Live-status badge: tells the user WHY the main pane is blank.
+  // ----------------------------------------------------------------------
+  const liveBadge = document.createElement('div');
+  liveBadge.id = 'live-badge';
+  liveBadge.className = 'hidden';
+  document.body.appendChild(liveBadge);
+
+  function pollLiveStatus() {
+    fetch('/api/live_status')
+      .then(r => r.ok ? r.json() : null)
+      .then(d => {
+        if (!d) return;
+        if (d.has_frame) {
+          liveBadge.classList.add('hidden');
+          return;
+        }
+        liveBadge.classList.remove('hidden');
+        liveBadge.textContent = d.message || 'No live frame';
+      })
+      .catch(() => {});
+  }
+  pollLiveStatus();
+  setInterval(pollLiveStatus, 2000);
+
 
   function setActive(ds, preferCamera) {
     currentDs = ds;

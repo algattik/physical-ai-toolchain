@@ -15,7 +15,7 @@ import queue
 import re
 import threading
 import time
-from collections import OrderedDict
+from collections import OrderedDict, deque
 from pathlib import Path
 from typing import Optional
 
@@ -23,6 +23,7 @@ import av
 import cv2
 import numpy as np
 import rclpy
+import rclpy.logging
 from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.responses import FileResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
@@ -45,6 +46,17 @@ JPEG_QUALITY = int(os.environ.get('JPEG_QUALITY', '70'))
 # JPEG bytes and a full BGR ndarray (~900 KB at 640×480) so the cap matters.
 REFERENCE_CACHE_MAX = int(os.environ.get('REFERENCE_CACHE_MAX', '64'))
 THUMBNAIL_CACHE_MAX = int(os.environ.get('THUMBNAIL_CACHE_MAX', '512'))
+# How long a topic probe is allowed to wait for a message before being declared
+# silent. Keep generous: low-rate publishers may take >1s between messages.
+TOPIC_PROBE_TIMEOUT_S = float(os.environ.get('TOPIC_PROBE_TIMEOUT_S', '3.0'))
+# Cache TTL for successful probe results. Re-probing flushes stale encoding
+# information if the publisher has been reconfigured.
+TOPIC_PROBE_TTL_S = float(os.environ.get('TOPIC_PROBE_TTL_S', '300.0'))
+# Encodings the current decoder can render (kept in sync with
+# CameraSubscriber._decode below).
+DISPLAYABLE_ENCODINGS = frozenset({
+    'bgr8', 'rgb8', 'bgra8', 'rgba8', 'mono8', '8uc1',
+})
 
 
 def _camera_video_path(ds_dir: Path, camera_key: str) -> Path:
@@ -69,9 +81,190 @@ class CameraSubscriber(Node):
         )
         self._sub = None
         self._topic = ''
+        self._first_msg_logged = False
+        self._msg_count = 0
+        self._last_log_t = 0.0
         self._pending: queue.Queue[str] = queue.Queue()
+        # Live-status counters consulted by /api/live_status. Updated only
+        # from the rclpy executor thread; reads are cheap so no lock needed
+        # to publish them — they're snapshotted under self._status_lock.
+        self._status_lock = threading.Lock()
+        self._last_msg_at: Optional[float] = None
+        self._last_decode_error: Optional[dict] = None
+        self._last_publisher_count: Optional[int] = None
+        self._last_frame_info: Optional[dict] = None
+
+        # ------------------------------------------------------------------
+        # Probe state. Probes run on the rclpy executor; the FastAPI side
+        # only enqueues requests and reads the cache.
+        # ------------------------------------------------------------------
+        self._probe_lock = threading.Lock()
+        self._probe_cache: dict[str, dict] = {}
+        self._probe_requests: queue.Queue[str] = queue.Queue()
+        self._probe_in_flight: dict[str, dict] = {}
+
         # Drain pending topic changes on the ROS executor thread.
         self.create_timer(0.05, self._apply_pending)
+        self.create_timer(0.1, self._tick_probes)
+
+    # ------------------------------------------------------------------
+    # Live status (read by /api/live_status)
+    # ------------------------------------------------------------------
+
+    def get_live_status(self) -> dict:
+        with self._status_lock:
+            return {
+                'topic': self._topic,
+                'subscribed': self._sub is not None,
+                'msg_count': self._msg_count,
+                'last_msg_at': self._last_msg_at,
+                'last_publisher_count': self._last_publisher_count,
+                'last_decode_error': dict(self._last_decode_error) if self._last_decode_error else None,
+                'last_frame_info': dict(self._last_frame_info) if self._last_frame_info else None,
+            }
+
+    # ------------------------------------------------------------------
+    # Topic probes (read by /api/topics)
+    # ------------------------------------------------------------------
+
+    def get_probe(self, topic: str) -> Optional[dict]:
+        with self._probe_lock:
+            entry = self._probe_cache.get(topic)
+            return dict(entry) if entry else None
+
+    def get_probes(self) -> dict[str, dict]:
+        with self._probe_lock:
+            return {k: dict(v) for k, v in self._probe_cache.items()}
+
+    def request_probe(self, topic: str) -> None:
+        """Queue ``topic`` for probing. Idempotent — no-op while in flight
+        or while a fresh cache entry exists."""
+        if not topic:
+            return
+        now = time.time()
+        with self._probe_lock:
+            entry = self._probe_cache.get(topic)
+            if entry and (now - entry.get('ts', 0)) < TOPIC_PROBE_TTL_S:
+                return
+            if topic in self._probe_in_flight:
+                return
+        self._probe_requests.put(topic)
+
+    def _record_probe(
+        self,
+        topic: str,
+        *,
+        encoding: Optional[str] = None,
+        width: Optional[int] = None,
+        height: Optional[int] = None,
+        step: Optional[int] = None,
+        publisher_count: Optional[int] = None,
+        displayable: Optional[bool] = None,
+        error: Optional[str] = None,
+    ) -> None:
+        with self._probe_lock:
+            self._probe_cache[topic] = {
+                'topic': topic,
+                'ts': time.time(),
+                'encoding': encoding,
+                'width': width,
+                'height': height,
+                'step': step,
+                'publisher_count': publisher_count,
+                'displayable': displayable,
+                'error': error,
+            }
+
+    def _tick_probes(self) -> None:
+        """rclpy-thread timer: start queued probes, time out in-flight ones."""
+        # Start new probes (cap concurrency).
+        while len(self._probe_in_flight) < 8:
+            try:
+                topic = self._probe_requests.get_nowait()
+            except queue.Empty:
+                break
+            if topic in self._probe_in_flight or topic == self._topic:
+                continue
+            try:
+                pubs = self.get_publishers_info_by_topic(topic)
+            except Exception as exc:  # noqa: BLE001
+                _record_issue(
+                    'warning', 'topic_probe',
+                    f'discovery query failed for {topic}: {exc}',
+                    key=f'probe-discovery:{topic}')
+                self._record_probe(topic, publisher_count=0, displayable=False,
+                                   error=f'discovery failed: {exc}')
+                continue
+            if not pubs:
+                self._record_probe(topic, publisher_count=0, displayable=False,
+                                   error='no publisher')
+                continue
+            try:
+                sub = self.create_subscription(
+                    Image, topic,
+                    lambda msg, t=topic: self._on_probe_message(t, msg),
+                    self._qos)
+            except Exception as exc:  # noqa: BLE001
+                _record_issue(
+                    'warning', 'topic_probe',
+                    f'subscribe failed for {topic}: {exc}',
+                    key=f'probe-subscribe:{topic}')
+                self._record_probe(topic, publisher_count=len(pubs),
+                                   displayable=False, error=f'subscribe failed: {exc}')
+                continue
+            self._probe_in_flight[topic] = {
+                'sub': sub,
+                'deadline': time.monotonic() + TOPIC_PROBE_TIMEOUT_S,
+                'publisher_count': len(pubs),
+            }
+
+        # Time out in-flight probes that never got a message.
+        if self._probe_in_flight:
+            now = time.monotonic()
+            expired = [t for t, info in self._probe_in_flight.items() if now >= info['deadline']]
+            for topic in expired:
+                info = self._probe_in_flight.pop(topic)
+                self.destroy_subscription(info['sub'])
+                self._record_probe(
+                    topic,
+                    publisher_count=info['publisher_count'],
+                    displayable=False,
+                    error=f'no message within {TOPIC_PROBE_TIMEOUT_S:.1f}s')
+                _record_issue(
+                    'info', 'topic_probe',
+                    f'no message on {topic} within {TOPIC_PROBE_TIMEOUT_S:.1f}s '
+                    f'(publishers={info["publisher_count"]})',
+                    key=f'probe-timeout:{topic}')
+
+    def _on_probe_message(self, topic: str, msg: Image) -> None:
+        info = self._probe_in_flight.pop(topic, None)
+        if info is not None:
+            try:
+                self.destroy_subscription(info['sub'])
+            except Exception:  # noqa: BLE001
+                pass
+        enc = (msg.encoding or '').lower() or None
+        displayable = bool(enc and enc in DISPLAYABLE_ENCODINGS)
+        self._record_probe(
+            topic,
+            encoding=enc,
+            width=int(msg.width),
+            height=int(msg.height),
+            step=int(msg.step),
+            publisher_count=(info or {}).get('publisher_count'),
+            displayable=displayable,
+            error=None if displayable else f'encoding {enc!r} not displayable',
+        )
+        if not displayable:
+            _record_issue(
+                'info', 'topic_probe',
+                f'{topic} carries non-displayable encoding {enc!r} '
+                f'({msg.width}x{msg.height}); will be greyed out in the picker',
+                key=f'probe-undisplayable:{topic}')
+
+    # ------------------------------------------------------------------
+    # Topic subscription change
+    # ------------------------------------------------------------------
 
     def request_topic(self, topic: str) -> None:
         """Thread-safe topic change request. Applied on the ROS executor."""
@@ -87,19 +280,64 @@ class CameraSubscriber(Node):
         if latest is None or latest == self._topic:
             return
         if self._sub is not None:
+            self.get_logger().info(
+                f'Unsubscribing from {self._topic} (received {self._msg_count} message(s))')
             self.destroy_subscription(self._sub)
             self._sub = None
         self._topic = latest
+        self._first_msg_logged = False
+        self._msg_count = 0
+        with self._status_lock:
+            self._last_msg_at = None
+            self._last_decode_error = None
+            self._last_publisher_count = None
+            self._last_frame_info = None
         if latest:
-            self._sub = self.create_subscription(
-                Image, latest, self._on_image, self._qos)
-            self.get_logger().info(f'Subscribed to {latest}')
+            try:
+                self._sub = self.create_subscription(
+                    Image, latest, self._on_image, self._qos)
+            except Exception as exc:  # noqa: BLE001
+                self._sub = None
+                _record_issue(
+                    'error', 'ros_subscribe',
+                    f'failed to subscribe to {latest}: {exc}',
+                    key=f'subscribe:{latest}')
+                return
+            self.get_logger().info(
+                f'Subscribed to {latest} (QoS: BEST_EFFORT, KEEP_LAST depth=2)')
+            # Diagnose discovery: list publishers and their QoS for this topic.
+            try:
+                pubs = self.get_publishers_info_by_topic(latest)
+                with self._status_lock:
+                    self._last_publisher_count = len(pubs)
+                if not pubs:
+                    _record_issue(
+                        'warning', 'ros_subscribe',
+                        f'No publishers currently advertise {latest}. '
+                        f'Check topic name spelling, ROS_DOMAIN_ID, and DDS discovery.',
+                        key=f'no-publisher:{latest}')
+                for p in pubs:
+                    qos = p.qos_profile
+                    self.get_logger().info(
+                        f'  publisher node="{p.node_namespace}/{p.node_name}" '
+                        f'type={p.topic_type} '
+                        f'reliability={qos.reliability.name} '
+                        f'durability={qos.durability.name} '
+                        f'history={qos.history.name} depth={qos.depth}')
+            except Exception as exc:  # noqa: BLE001
+                _record_issue(
+                    'warning', 'ros_subscribe',
+                    f'discovery query failed for {latest}: {exc}',
+                    key=f'discovery:{latest}')
             global _latest_frame
             with _frame_lock:
                 _latest_frame = None  # invalidate previous camera's frame
+        else:
+            self.get_logger().info('Topic cleared; live feed will show placeholder.')
 
     @staticmethod
-    def _decode(msg: Image) -> Optional[np.ndarray]:
+    def _decode(msg: Image) -> tuple[Optional[np.ndarray], Optional[str]]:
+        """Decode ``msg`` to BGR. Returns ``(array, reason_if_failed)``."""
         enc = msg.encoding.lower()
         h, w = msg.height, msg.width
         step = msg.step or 0
@@ -110,37 +348,101 @@ class CameraSubscriber(Node):
                 'mono8': 1, '8uc1': 1,
             }.get(enc)
             if channels is None:
-                return None
+                return None, f'unsupported encoding {enc!r}'
             row_pixels = step // channels if step else w
             if row_pixels < w:
-                return None
+                return None, (
+                    f'step={step} too small for width={w} channels={channels} '
+                    f'(expected step >= {w * channels})')
             view = buf.reshape(h, row_pixels * channels) if step else buf.reshape(h, w * channels)
             view = view[:, : w * channels]  # drop row padding
             if channels == 1:
                 gray = view.reshape(h, w)
-                return cv2.cvtColor(gray, cv2.COLOR_GRAY2BGR)
+                return cv2.cvtColor(gray, cv2.COLOR_GRAY2BGR), None
             arr = view.reshape(h, w, channels)
             if enc == 'bgr8':
-                return arr.copy()  # detach from msg.data
+                return arr.copy(), None  # detach from msg.data
             if enc == 'rgb8':
-                return cv2.cvtColor(arr, cv2.COLOR_RGB2BGR)
+                return cv2.cvtColor(arr, cv2.COLOR_RGB2BGR), None
             if enc == 'bgra8':
-                return cv2.cvtColor(arr, cv2.COLOR_BGRA2BGR)
+                return cv2.cvtColor(arr, cv2.COLOR_BGRA2BGR), None
             if enc == 'rgba8':
-                return cv2.cvtColor(arr, cv2.COLOR_RGBA2BGR)
-        except (ValueError, cv2.error):
-            return None
-        return None
+                return cv2.cvtColor(arr, cv2.COLOR_RGBA2BGR), None
+        except (ValueError, cv2.error) as exc:
+            return None, f'reshape/convert error: {exc}'
+        return None, 'unreachable decode branch'
 
     def _on_image(self, msg: Image) -> None:
         global _latest_frame, _frame_seq
-        frame = self._decode(msg)
+        self._msg_count += 1
+        frame, reason = self._decode(msg)
         if frame is None:
-            self.get_logger().warning(
-                f'Unsupported encoding/shape: enc={msg.encoding} '
-                f'{msg.width}x{msg.height} step={msg.step}',
-                throttle_duration_sec=5.0)
+            err = {
+                'reason': reason,
+                'encoding': msg.encoding,
+                'width': int(msg.width),
+                'height': int(msg.height),
+                'step': int(msg.step),
+                'ts': time.time(),
+            }
+            with self._status_lock:
+                self._last_decode_error = err
+            # Update probe cache so the dropdown disables this topic from
+            # now on (a live decode failure is authoritative).
+            self._record_probe(
+                self._topic,
+                encoding=(msg.encoding or '').lower() or None,
+                width=int(msg.width),
+                height=int(msg.height),
+                step=int(msg.step),
+                publisher_count=self._last_publisher_count,
+                displayable=False,
+                error=f'decode failed: {reason}',
+            )
+            _record_issue(
+                'warning', 'ros_decode',
+                f'[{self._topic}] decode failed: {reason}; '
+                f'enc={msg.encoding} {msg.width}x{msg.height} step={msg.step} '
+                f'data_len={len(msg.data)}',
+                key=f'decode:{self._topic}:{reason}')
             return
+        info = {
+            'width': int(msg.width),
+            'height': int(msg.height),
+            'encoding': msg.encoding,
+            'step': int(msg.step),
+            'frame_id': msg.header.frame_id,
+        }
+        if not self._first_msg_logged:
+            self._first_msg_logged = True
+            _LOGGER.info(
+                '[%s] first frame received: %dx%d encoding=%s step=%d frame_id=%r',
+                self._topic, msg.width, msg.height, msg.encoding,
+                msg.step, msg.header.frame_id)
+        else:
+            now = time.monotonic()
+            if now - self._last_log_t >= 5.0:
+                self._last_log_t = now
+                _LOGGER.info(
+                    '[%s] still receiving: msg #%d %dx%d enc=%s',
+                    self._topic, self._msg_count, msg.width, msg.height, msg.encoding)
+        with self._status_lock:
+            self._last_msg_at = time.time()
+            self._last_decode_error = None
+            self._last_frame_info = info
+        # A live frame proves the topic is displayable; refresh the probe
+        # cache so the picker reflects current reality.
+        enc = (msg.encoding or '').lower() or None
+        self._record_probe(
+            self._topic,
+            encoding=enc,
+            width=int(msg.width),
+            height=int(msg.height),
+            step=int(msg.step),
+            publisher_count=self._last_publisher_count,
+            displayable=bool(enc and enc in DISPLAYABLE_ENCODINGS),
+            error=None,
+        )
         with _frame_lock:
             _latest_frame = frame
             _frame_seq += 1
@@ -158,8 +460,108 @@ logging.basicConfig(
     format='%(asctime)s %(levelname)s %(name)s %(message)s',
 )
 
-_camera_node: Optional[CameraSubscriber] = None
+
+# ---------------------------------------------------------------------------
+# Issue journal: every error/warning that the user might care about is
+# recorded here so the UI can render it as a toast. The journal also logs
+# the event at the matching Python log level (INFO minimum), so the same
+# event lands in stderr too — operators see it whether they look at the
+# console or the browser.
+# ---------------------------------------------------------------------------
+
+_ISSUES_MAX = 500
+_ISSUES_LOCK = threading.Lock()
+_ISSUES: 'deque[dict]' = deque(maxlen=_ISSUES_MAX)
+_ISSUES_SEQ = 0
+# (level, source, key) -> last_emit_monotonic. Used to throttle bursts of
+# identical events (e.g. a decode failure that fires at the camera fps).
+_ISSUES_THROTTLE: dict[tuple[str, str, str], float] = {}
+_ISSUES_THROTTLE_S = 5.0
+
+
+def _record_issue(
+    level: str,
+    source: str,
+    message: str,
+    *,
+    key: Optional[str] = None,
+    extra: Optional[dict] = None,
+    throttle_s: float = _ISSUES_THROTTLE_S,
+) -> None:
+    """Record an operator-visible event.
+
+    Always logs at the matching Python log level (lifted to INFO minimum so
+    the user sees it without enabling DEBUG) and pushes onto the in-memory
+    journal that ``/api/issues`` exposes to the UI.
+
+    ``key`` (default = ``source + message``) governs throttling so that a
+    repeating event doesn't fill the journal. The throttled occurrences are
+    still counted on the last surfaced entry.
+    """
+    global _ISSUES_SEQ
+    level = level.lower()
+    log_level = {
+        'info': logging.INFO,
+        'warning': logging.WARNING,
+        'error': logging.ERROR,
+        'critical': logging.CRITICAL,
+    }.get(level, logging.INFO)
+    # Lift below-INFO events to INFO so the user requirement
+    # "errors logged at INFO minimum" holds.
+    log_level = max(log_level, logging.INFO)
+    _LOGGER.log(log_level, '[%s] %s', source, message)
+
+    throttle_key = (level, source, key or message)
+    now = time.monotonic()
+    with _ISSUES_LOCK:
+        last = _ISSUES_THROTTLE.get(throttle_key, 0.0)
+        if last and (now - last) < throttle_s and _ISSUES:
+            # Bump the count on the most recent matching entry instead of
+            # appending a fresh one.
+            for entry in reversed(_ISSUES):
+                if (entry['level'] == level
+                        and entry['source'] == source
+                        and entry.get('key') == (key or message)):
+                    entry['count'] = entry.get('count', 1) + 1
+                    entry['last_ts'] = time.time()
+                    return
+        _ISSUES_THROTTLE[throttle_key] = now
+        _ISSUES_SEQ += 1
+        entry = {
+            'seq': _ISSUES_SEQ,
+            'ts': time.time(),
+            'last_ts': time.time(),
+            'level': level,
+            'source': source,
+            'message': message,
+            'key': key or message,
+            'count': 1,
+        }
+        if extra:
+            entry['extra'] = extra
+        _ISSUES.append(entry)
+
+
+def _issues_since(since: int = 0, limit: int = 100) -> tuple[int, list[dict]]:
+    """Return ``(latest_seq, entries)`` with ``seq > since``."""
+    with _ISSUES_LOCK:
+        latest = _ISSUES_SEQ
+        out = [dict(e) for e in _ISSUES if e['seq'] > since]
+    return latest, out[-limit:]
+
+
+# ---------------------------------------------------------------------------
+# Topic probe registry: opens a short-lived Subscription on every observed
+# ``sensor_msgs/Image`` topic to read its real encoding + dimensions. This
+# is the only reliable filter — topic names lie ("/color" can be 16UC1) and
+# QoS alone doesn't tell you what the decoder will do with the bytes.
+#
+# Lives inside CameraSubscriber so all rclpy state stays single-threaded.
+# ---------------------------------------------------------------------------
+
+_camera_node: Optional['CameraSubscriber'] = None
 _pending_topics: 'queue.Queue[str]' = queue.Queue()
+
 
 
 def _ros_thread() -> None:
@@ -167,8 +569,17 @@ def _ros_thread() -> None:
     rclpy.init()
     node = CameraSubscriber()
     _camera_node = node
-    _LOGGER.info('ROS subscriber initialised')
-    
+    # Mirror SCENE_ALIGNER_LOG_LEVEL onto the rclpy logger so the node's
+    # info/debug calls actually appear. rclpy maintains its own severity
+    # filter independent of Python's logging module.
+    level_name = os.environ.get('SCENE_ALIGNER_LOG_LEVEL', 'INFO').upper()
+    try:
+        ros_level = getattr(rclpy.logging.LoggingSeverity, level_name)
+        rclpy.logging.set_logger_level(node.get_logger().name, ros_level)
+    except AttributeError:
+        _LOGGER.warning('Unknown SCENE_ALIGNER_LOG_LEVEL=%s; rclpy stays at INFO', level_name)
+    _LOGGER.info('ROS subscriber initialised (log level=%s)', level_name)
+
     # Enumerate all available topics at startup
     topics = node.list_topics()
     _LOGGER.info('Available ROS 2 topics (%d):', len(topics))
@@ -275,7 +686,10 @@ def _safe_dataset_dir(dataset_id: str) -> Path:
 def _list_datasets() -> list[dict]:
     """A dataset is any directory containing meta/info.json. Walk recursively."""
     if not DATASETS_DIR.is_dir():
-        _LOGGER.warning('DATASETS_DIR does not exist: %s', DATASETS_DIR)
+        _record_issue(
+            'warning', 'dataset_io',
+            f'DATASETS_DIR does not exist: {DATASETS_DIR}',
+            key='datasets-dir-missing')
         return []
     base = DATASETS_DIR.resolve()
     out: list[dict] = []
@@ -314,7 +728,11 @@ def _read_info(dataset_id: str) -> dict:
     try:
         with open(info_path) as f:
             data = json.load(f)
-    except Exception:
+    except Exception as exc:  # noqa: BLE001
+        _record_issue(
+            'error', 'dataset_io',
+            f'failed to parse {info_path}: {exc}',
+            key=f'info-parse:{dataset_id}')
         data = {}
     _info_cache[dataset_id] = data
     return data
@@ -336,7 +754,11 @@ def _read_labels(dataset_id: str) -> dict:
     try:
         with open(labels_path) as f:
             data = json.load(f)
-    except Exception:
+    except Exception as exc:  # noqa: BLE001
+        _record_issue(
+            'warning', 'dataset_io',
+            f'failed to parse {labels_path}: {exc}',
+            key=f'labels-parse:{dataset_id}')
         data = {'available_labels': [], 'episodes': {}}
     data.setdefault('available_labels', [])
     data.setdefault('episodes', {})
@@ -567,20 +989,68 @@ def _composite(live: np.ndarray, ref: Optional[np.ndarray],
 # MJPEG streaming
 # ---------------------------------------------------------------------------
 
-_PLACEHOLDER: bytes = b''
+_PLACEHOLDER_LOCK = threading.Lock()
+_PLACEHOLDER_CACHE: dict[str, bytes] = {}
 
 
-def _placeholder_jpeg() -> bytes:
-    global _PLACEHOLDER
-    if _PLACEHOLDER:
-        return _PLACEHOLDER
-    img = np.full((360, 640, 3), 32, dtype=np.uint8)
-    cv2.putText(img, 'Waiting for camera...', (60, 190),
-                cv2.FONT_HERSHEY_SIMPLEX, 1.0, (200, 200, 200), 2,
-                cv2.LINE_AA)
-    ok, buf = cv2.imencode('.jpg', img, [cv2.IMWRITE_JPEG_QUALITY, JPEG_QUALITY])
-    _PLACEHOLDER = bytes(buf) if ok else b''
-    return _PLACEHOLDER
+def _placeholder_jpeg(message: str = 'Waiting for camera...') -> bytes:
+    with _PLACEHOLDER_LOCK:
+        cached = _PLACEHOLDER_CACHE.get(message)
+        if cached:
+            return cached
+        img = np.full((360, 640, 3), 32, dtype=np.uint8)
+        # Word-wrap the message so long diagnostic strings don't run off the
+        # edge. ~50 chars/line at the chosen font scale.
+        lines: list[str] = []
+        for paragraph in str(message).splitlines() or ['']:
+            words = paragraph.split(' ')
+            row = ''
+            for w in words:
+                candidate = (row + ' ' + w).strip()
+                if len(candidate) <= 50:
+                    row = candidate
+                else:
+                    if row:
+                        lines.append(row)
+                    row = w
+            lines.append(row)
+        font_scale = 0.6 if max((len(l) for l in lines), default=0) > 30 else 0.8
+        line_h = 28
+        y = max(40, 180 - (len(lines) - 1) * line_h // 2)
+        for line in lines:
+            cv2.putText(img, line, (30, y),
+                        cv2.FONT_HERSHEY_SIMPLEX, font_scale,
+                        (210, 210, 210), 2, cv2.LINE_AA)
+            y += line_h
+        ok, buf = cv2.imencode('.jpg', img, [cv2.IMWRITE_JPEG_QUALITY, JPEG_QUALITY])
+        jpg = bytes(buf) if ok else b''
+        _PLACEHOLDER_CACHE[message] = jpg
+        # Cap the cache to avoid unbounded growth from changing messages.
+        if len(_PLACEHOLDER_CACHE) > 32:
+            _PLACEHOLDER_CACHE.pop(next(iter(_PLACEHOLDER_CACHE)))
+        return jpg
+
+
+def _live_status_message() -> str:
+    """Human-readable summary of why no live frame is available right now."""
+    if _camera_node is None:
+        return 'ROS subscriber not yet ready'
+    status = _camera_node.get_live_status()
+    topic = status.get('topic') or ''
+    if not topic:
+        return 'No ROS topic selected'
+    if not status.get('subscribed'):
+        return f'Not subscribed to {topic}'
+    err = status.get('last_decode_error')
+    if err:
+        return (f'Decode failed on {topic}: '
+                f'encoding {err.get("encoding")!r} '
+                f'{err.get("width")}x{err.get("height")} — {err.get("reason")}')
+    pubs = status.get('last_publisher_count')
+    if pubs is not None and pubs == 0:
+        return (f'No publishers on {topic} '
+                f'(check ROS_DOMAIN_ID and DDS discovery)')
+    return f'Waiting for first frame on {topic}…'
 
 
 # Single shared composite is produced by a background thread so multiple
@@ -598,7 +1068,9 @@ def _composite_loop() -> None:
     period = 1.0 / STREAM_FPS if STREAM_FPS > 0 else 0
     next_t = time.monotonic()
     last_score_t = 0.0
+    last_no_frame_log = 0.0
     SCORE_PERIOD = 0.2  # seconds, ~5 Hz
+    NO_FRAME_LOG_PERIOD = 5.0
     while True:
         with _frame_lock:
             live = None if _latest_frame is None else _latest_frame.copy()
@@ -606,7 +1078,14 @@ def _composite_loop() -> None:
             st = dict(_state)
 
         if live is None:
-            jpg = _placeholder_jpeg()
+            now_m = time.monotonic()
+            if now_m - last_no_frame_log >= NO_FRAME_LOG_PERIOD:
+                last_no_frame_log = now_m
+                topic = st.get('topic') or '<none>'
+                _LOGGER.info(
+                    'No live frame available; serving placeholder. Selected topic=%s',
+                    topic)
+            jpg = _placeholder_jpeg(_live_status_message())
         else:
             ref_arr = None
             if st['dataset'] and st['camera']:
@@ -626,7 +1105,11 @@ def _composite_loop() -> None:
                     _record_score(sv)
                     with _score_lock:
                         _score_state['low_texture'] = sv is None
-                except Exception:
+                except Exception as exc:  # noqa: BLE001
+                    _record_issue(
+                        'error', 'score',
+                        f'alignment score failed: {type(exc).__name__}: {exc}',
+                        key='score-exception')
                     _LOGGER.exception('alignment score failed')
             ok, buf = cv2.imencode('.jpg', composed,
                                    [cv2.IMWRITE_JPEG_QUALITY, JPEG_QUALITY])
@@ -1068,19 +1551,72 @@ def api_state_get() -> dict:
 def api_topics() -> dict:
     """List all discovered ROS 2 topics with their message types.
 
-    Returns every topic visible to the node (not just ``sensor_msgs/msg/Image``)
-    so the operator can see what discovery has found. The UI flags which ones
-    look like camera streams.
+    Image topics are enriched with the latest probe result so the UI can
+    grey out non-displayable feeds (depth maps, exotic encodings) instead
+    of relying on name heuristics. Probes are requested lazily here and
+    fulfilled on the rclpy executor; the first call typically returns
+    ``displayable: null`` for fresh entries while probes are in flight,
+    and subsequent calls fill in.
     """
     if _camera_node is None:
         return {'topics': []}
-    topics = [
-        {'name': name, 'types': list(types)}
-        for name, types in _camera_node.list_topics()
-    ]
+    discovered = _camera_node.list_topics()
+    probes_snapshot = _camera_node.get_probes()
+    topics: list[dict] = []
+    image_count = 0
+    displayable_count = 0
+    for name, types in discovered:
+        types_list = list(types)
+        is_image = 'sensor_msgs/msg/Image' in types_list
+        entry: dict = {
+            'name': name,
+            'types': types_list,
+            'is_image': is_image,
+            'probe': None,
+        }
+        if is_image:
+            image_count += 1
+            probe = probes_snapshot.get(name)
+            if probe is None or (time.time() - probe.get('ts', 0)) > TOPIC_PROBE_TTL_S:
+                _camera_node.request_probe(name)
+            entry['probe'] = probe
+            if probe and probe.get('displayable'):
+                displayable_count += 1
+        topics.append(entry)
     topics.sort(key=lambda t: t['name'])
-    _LOGGER.info('Topic discovery: %d topic(s) visible', len(topics))
+    _LOGGER.info(
+        'Topic discovery: %d topic(s) visible (%d image, %d displayable)',
+        len(topics), image_count, displayable_count)
     return {'topics': topics}
+
+
+@app.get('/api/issues')
+def api_issues(since: int = 0, limit: int = 100) -> dict:
+    """Return journal entries with ``seq > since`` for UI toast rendering."""
+    latest, entries = _issues_since(since=since, limit=limit)
+    return {'seq': latest, 'issues': entries}
+
+
+@app.get('/api/live_status')
+def api_live_status() -> dict:
+    """Snapshot of the currently-subscribed live feed for the status badge."""
+    if _camera_node is None:
+        return {
+            'ready': False,
+            'message': 'ROS subscriber not yet ready',
+            'status': None,
+        }
+    status = _camera_node.get_live_status()
+    msg = _live_status_message()
+    has_frame = False
+    with _frame_lock:
+        has_frame = _latest_frame is not None
+    return {
+        'ready': True,
+        'has_frame': has_frame,
+        'message': msg,
+        'status': status,
+    }
 
 
 @app.get('/api/score')

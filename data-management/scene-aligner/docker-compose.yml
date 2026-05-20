@@ -55,6 +55,9 @@ services:
       DATASETS_DIR: /data/sample_datasets
       DEFAULT_CAMERA_KEY: "${SCENE_ALIGNER_DEFAULT_CAMERA:-}"
       STREAM_FPS: "15"
+      # Set to DEBUG for verbose diagnostics (per-message logs, decode failure
+      # details, publisher QoS on subscribe, no-frame heartbeats).
+      SCENE_ALIGNER_LOG_LEVEL: "${SCENE_ALIGNER_LOG_LEVEL:-INFO}"
     networks: [ros]
     ports:
       # Bind to 127.0.0.1 by default. Set SCENE_ALIGNER_BIND=0.0.0.0 in your
