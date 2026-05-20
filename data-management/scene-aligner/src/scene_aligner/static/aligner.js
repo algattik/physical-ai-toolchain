@@ -107,16 +107,46 @@
   let topicProbes = {};            // name -> probe object
   let topicMeta = {};              // name -> {publisher_count, displayable, ...}
 
+  // Categorise a topic path by stream kind. Lower is preferred:
+  //   0 = imitation-learning stream (/il/...)        — what datasets are recorded from
+  //   1 = colour stream (rgba / rgb / rgbd / rgb_*)  — closest visual analogue otherwise
+  //   2 = depth stream (depth / depth_*)             — usable but not the natural reference
+  //   3 = anything else (infrared, raw, etc.)
+  // 'il' wins anywhere in the path; for rgb vs. depth the leaf segment is
+  // authoritative because '/rgbd/depth' is a depth stream, not a colour one.
+  function topicCategory(name) {
+    const segs = name.toLowerCase().split('/').filter(Boolean);
+    const isRgb = (s) => s === 'rgba' || s.startsWith('rgb');
+    const isDepth = (s) => s === 'depth' || s.startsWith('depth');
+    if (segs.includes('il')) {
+      const leaf = segs[segs.length - 1];
+      if (isDepth(leaf)) return 2;
+      return 0;
+    }
+    for (let i = segs.length - 1; i >= 0; i--) {
+      const s = segs[i];
+      if (isDepth(s)) return 2;
+      if (isRgb(s)) return 1;
+    }
+    return 3;
+  }
+
   function pickBestTopic(cameraKey) {
     if (!cameraKey || !availableTopics.length) return '';
     const short = shortCam(cameraKey);
-    let best = '', bestScore = -1;
+    // Sort by (category asc, lcs desc) — the camera-name match must still be
+    // meaningful (>=3 shared chars), otherwise we'd happily pick an unrelated
+    // /il/* topic just because of its category rank.
+    let best = '', bestScore = -1, bestCat = 99;
     for (const t of availableTopics) {
       const score = lcsLen(short, t);
-      if (score > bestScore) { bestScore = score; best = t; }
+      if (score < 3) continue;
+      const cat = topicCategory(t);
+      if (cat < bestCat || (cat === bestCat && score > bestScore)) {
+        bestCat = cat; bestScore = score; best = t;
+      }
     }
-    // Require at least 3 shared characters to count as a meaningful match.
-    return bestScore >= 3 ? best : '';
+    return best;
   }
 
   function probeLabel(probe) {

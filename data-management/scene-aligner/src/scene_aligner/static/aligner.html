@@ -10,27 +10,33 @@
   <div class="row">
     <span class="pill">Scene Aligner</span>
     <button class="btn" id="open-picker">📁 Choose dataset</button>
-    <button class="btn ghost" id="open-help" title="How to use" style="padding:0.4rem 0.7rem">?</button>
+    <button class="btn ghost icon-btn" id="open-help" title="How to use">?</button>
     <span id="current" class="hint">none</span>
-    <label>Camera
-      <select id="camera"></select>
-    </label>
-    <label>ROS topic
-      <select id="ros-topic"></select>
-    </label>
-    <button class="btn ghost" id="refresh-topics" title="Refresh topic list" style="padding:0.4rem 0.7rem">↻</button>
   </div>
-  <div class="row">
-    <label class="ref-ctl">Reference opacity
-      <input id="ref-op" type="range" min="0" max="100" step="10" value="50" disabled>
-      <span id="ref-op-val">50%</span>
-    </label>
-    <label class="ref-ctl"><input id="invert-ref" type="checkbox" checked disabled> invert</label>
-    <label>Live opacity
-      <input id="live-op" type="range" min="0" max="100" step="10" value="50">
-      <span id="live-op-val">50%</span>
-    </label>
-    <label><input id="invert-live" type="checkbox"> invert</label>
+  <div class="row groups">
+    <fieldset class="group group-ref">
+      <legend>Reference</legend>
+      <label>Camera
+        <select id="camera"></select>
+      </label>
+      <label class="ref-ctl">Opacity
+        <input id="ref-op" type="range" min="0" max="100" step="10" value="50" disabled>
+        <span id="ref-op-val">50%</span>
+      </label>
+      <label class="ref-ctl"><input id="invert-ref" type="checkbox" checked disabled> invert</label>
+    </fieldset>
+    <fieldset class="group group-live">
+      <legend>Live</legend>
+      <label>ROS topic
+        <select id="ros-topic"></select>
+      </label>
+      <button class="btn ghost icon-btn" id="refresh-topics" title="Refresh topic list">↻</button>
+      <label>Opacity
+        <input id="live-op" type="range" min="0" max="100" step="10" value="50">
+        <span id="live-op-val">50%</span>
+      </label>
+      <label><input id="invert-live" type="checkbox"> invert</label>
+    </fieldset>
   </div>
 </header>
 <div id="stage">
