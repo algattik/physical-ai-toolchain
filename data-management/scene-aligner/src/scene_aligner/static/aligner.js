@@ -308,7 +308,15 @@
       .then(d => {
         if (!d) return;
         lastIssueSeq = d.seq || lastIssueSeq;
-        (d.issues || []).forEach(renderToast);
+        (d.issues || []).forEach(entry => {
+          // Only surface toasts relevant to the user's current selection:
+          // entries with no topic tag (general errors) always show; entries
+          // tagged with a specific topic are suppressed unless they match
+          // the active topic — otherwise probes and background decode
+          // failures for unselected topics flood the screen.
+          if (entry.topic && entry.topic !== currentTopic) return;
+          renderToast(entry);
+        });
       })
       .catch(err => console.warn('pollIssues failed', err));
   }

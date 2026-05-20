@@ -191,7 +191,8 @@ class CameraSubscriber(Node):
                 _record_issue(
                     'warning', 'topic_probe',
                     f'discovery query failed for {topic}: {exc}',
-                    key=f'probe-discovery:{topic}')
+                    key=f'probe-discovery:{topic}',
+                    topic=topic)
                 self._record_probe(topic, publisher_count=0, displayable=False,
                                    error=f'discovery failed: {exc}')
                 continue
@@ -208,7 +209,8 @@ class CameraSubscriber(Node):
                 _record_issue(
                     'warning', 'topic_probe',
                     f'subscribe failed for {topic}: {exc}',
-                    key=f'probe-subscribe:{topic}')
+                    key=f'probe-subscribe:{topic}',
+                    topic=topic)
                 self._record_probe(topic, publisher_count=len(pubs),
                                    displayable=False, error=f'subscribe failed: {exc}')
                 continue
@@ -234,7 +236,8 @@ class CameraSubscriber(Node):
                     'info', 'topic_probe',
                     f'no message on {topic} within {TOPIC_PROBE_TIMEOUT_S:.1f}s '
                     f'(publishers={info["publisher_count"]})',
-                    key=f'probe-timeout:{topic}')
+                    key=f'probe-timeout:{topic}',
+                    topic=topic)
 
     def _on_probe_message(self, topic: str, msg: Image) -> None:
         info = self._probe_in_flight.pop(topic, None)
@@ -260,7 +263,8 @@ class CameraSubscriber(Node):
                 'info', 'topic_probe',
                 f'{topic} carries non-displayable encoding {enc!r} '
                 f'({msg.width}x{msg.height}); will be greyed out in the picker',
-                key=f'probe-undisplayable:{topic}')
+                key=f'probe-undisplayable:{topic}',
+                topic=topic)
 
     # ------------------------------------------------------------------
     # Topic subscription change
