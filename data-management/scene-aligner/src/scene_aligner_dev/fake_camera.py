@@ -7,9 +7,8 @@ aligner can be tested without a real robot present: walks
 each chunked MP4 with OpenCV, and publishes frames as
 ``sensor_msgs/Image`` (encoding bgr8) at each video's native frame rate
 (overridable via ``--fps``). Each camera's topic is derived from its key
-via ``--topic-template`` (default ``/sensor/{name}_camera/rgbd/color``),
-matching the aligner's ``CAMERA_TOPIC_TEMPLATE``. Loops by default; pass
-``--once`` to stop after one pass.
+via ``--topic-template`` (default ``/sensor/{name}_camera/rgbd/color``).
+Loops by default; pass ``--once`` to stop after one pass.
 
 Usage::
 

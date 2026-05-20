@@ -1,6 +1,21 @@
 x-ros-env: &ros-env
   ROS_DOMAIN_ID: "42"
-  RMW_IMPLEMENTATION: rmw_fastrtps_cpp
+  # CycloneDDS with explicit peer addressing. Docker Desktop on macOS does
+  # not pass UDP multicast across user-defined bridges, so FastRTPS default
+  # SPDP discovery silently fails. CycloneDDS lets us hard-code the two
+  # container service names as peers and forces unicast discovery.
+  RMW_IMPLEMENTATION: rmw_cyclonedds_cpp
+  CYCLONEDDS_URI: |
+    <CycloneDDS><Domain><General>
+      <AllowMulticast>false</AllowMulticast>
+      <Interfaces><NetworkInterface autodetermine="true"/></Interfaces>
+    </General><Discovery>
+      <ParticipantIndex>auto</ParticipantIndex>
+      <Peers>
+        <Peer address="aligner"/>
+        <Peer address="publisher"/>
+      </Peers>
+    </Discovery></Domain></CycloneDDS>
   PYTHONUNBUFFERED: "1"
 
 services:
@@ -27,8 +42,6 @@ services:
       - scene_aligner_dev.fake_camera
       - --dataset
       - /data/sample_datasets/${SCENE_ALIGNER_PUBLISH_DATASET}
-      - --topic-template
-      - ${SCENE_ALIGNER_CAMERA_TOPIC_TEMPLATE:-/sensor/{name}_camera/rgbd/color}
 
   aligner:
     # Build the image even when the publisher profile isn't enabled.
@@ -41,7 +54,6 @@ services:
       <<: *ros-env
       DATASETS_DIR: /data/sample_datasets
       DEFAULT_CAMERA_KEY: "${SCENE_ALIGNER_DEFAULT_CAMERA:-}"
-      CAMERA_TOPIC_TEMPLATE: "${SCENE_ALIGNER_CAMERA_TOPIC_TEMPLATE:-/sensor/{name}_camera/rgbd/color}"
       STREAM_FPS: "15"
     networks: [ros]
     ports:

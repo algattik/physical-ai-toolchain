@@ -74,7 +74,7 @@ Stop with `Ctrl+C`, tear down with `docker compose --profile dev down`.
 
 ## Quick start (against a real robot)
 
-If you already have something publishing `sensor_msgs/Image` on the topic that `CAMERA_TOPIC_TEMPLATE` derives from your selected camera, run only the aligner — without the `--profile dev` flag the fake camera is not started:
+If you already have something publishing `sensor_msgs/Image` topics, run only the aligner — without the `--profile dev` flag the fake camera is not started:
 
 ```bash
 docker compose up --build
@@ -93,7 +93,6 @@ All settings are environment variables on the `aligner` service.
 |-------------------------|--------------------------------------|-------------------------------------------------------------------------------------------------------------------|
 | `DATASETS_DIR`          | `/data/sample_datasets`              | Root path searched for `meta/info.json`. Bind-mount your dataset tree here.                                       |
 | `DEFAULT_CAMERA_KEY`    | *(empty)*                            | Camera key the UI preselects when a dataset opens. Empty → use first camera reported by that dataset.             |
-| `CAMERA_TOPIC_TEMPLATE` | `/sensor/{name}_camera/rgbd/color`   | Format string used to derive the live ROS 2 topic from the selected camera. `{name}` strips the lerobot prefix; `{key}` is the full key. |
 | `STREAM_FPS`            | `15`                                 | MJPEG output frame rate served to the browser.                                                                    |
 | `JPEG_QUALITY`          | `70`                                 | Quality of the composited MJPEG frames (0–100).                                                                   |
 | `ROS_DOMAIN_ID`         | `42`                                 | Standard ROS 2 discovery scope.                                                                                   |
@@ -106,7 +105,6 @@ Compose-level conveniences (read from `.env`):
 | `SCENE_ALIGNER_DATASETS_DIR`          | `./sample_data`                      | Host directory mounted at `/data/sample_datasets` (read-only).                                    |
 | `SCENE_ALIGNER_PUBLISH_DATASET`       | —                                    | Sub-path of the dataset whose videos the fake-camera dev tool replays. Every camera in that dataset is published on its own topic. |
 | `SCENE_ALIGNER_DEFAULT_CAMERA`        | *(empty)*                            | Forwarded to `DEFAULT_CAMERA_KEY` in the aligner.                                                 |
-| `SCENE_ALIGNER_CAMERA_TOPIC_TEMPLATE` | `/sensor/{name}_camera/rgbd/color`   | Forwarded to `CAMERA_TOPIC_TEMPLATE` in the aligner.                                              |
 | `SCENE_ALIGNER_PORT`                  | `8080`                               | Host port for the web UI.                                                                         |
 
 ## HTTP API

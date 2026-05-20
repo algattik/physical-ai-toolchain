@@ -39,32 +39,12 @@ from .episodes import (
 
 DATASETS_DIR = Path(os.environ.get('DATASETS_DIR', '/data/sample_datasets'))
 DEFAULT_CAMERA_KEY = os.environ.get('DEFAULT_CAMERA_KEY', '')
-# Topic derived from a camera key: ``observation.images.image_<name>`` →
-# ``/sensor/<name>_camera/rgbd/color`` with the default template. Override per
-# deployment to match your robot's topic naming.
-CAMERA_TOPIC_TEMPLATE = os.environ.get(
-    'CAMERA_TOPIC_TEMPLATE', '/sensor/{name}_camera/rgbd/color')
 STREAM_FPS = float(os.environ.get('STREAM_FPS', '15'))
 JPEG_QUALITY = int(os.environ.get('JPEG_QUALITY', '70'))
 # Maximum number of cached references and thumbnails. References hold both
 # JPEG bytes and a full BGR ndarray (~900 KB at 640×480) so the cap matters.
 REFERENCE_CACHE_MAX = int(os.environ.get('REFERENCE_CACHE_MAX', '64'))
 THUMBNAIL_CACHE_MAX = int(os.environ.get('THUMBNAIL_CACHE_MAX', '512'))
-
-
-def _camera_short_name(camera_key: str) -> str:
-    """Strip the lerobot ``observation.images.image_`` prefix if present."""
-    for prefix in ('observation.images.image_', 'observation.images.'):
-        if camera_key.startswith(prefix):
-            return camera_key[len(prefix):]
-    return camera_key
-
-
-def _topic_for_camera(camera_key: str) -> str:
-    return CAMERA_TOPIC_TEMPLATE.format(
-        name=_camera_short_name(camera_key),
-        key=camera_key,
-    )
 
 
 def _camera_video_path(ds_dir: Path, camera_key: str) -> Path:
@@ -554,6 +534,7 @@ _state_lock = threading.Lock()
 _state = {
     'dataset': '',
     'camera': '',
+    'topic': '',
     'episode': 0,
     'ref_op': 0.5,
     'live_op': 0.5,
@@ -984,7 +965,7 @@ def api_reference(dataset: str = Query(..., min_length=1),
 
 
 def _apply_active_topic() -> None:
-    """Re-subscribe ROS to the topic implied by current camera state.
+    """Re-subscribe ROS to the user-selected topic.
 
     Safe to call from any thread: enqueues the request; the ROS executor
     applies it on its own timer callback. If called before the ROS thread
@@ -992,8 +973,7 @@ def _apply_active_topic() -> None:
     and drained once the node exists.
     """
     with _state_lock:
-        cam = _state.get('camera') or ''
-    topic = _topic_for_camera(cam) if cam else ''
+        topic = _state.get('topic') or ''
     if _camera_node is None:
         _pending_topics.put(topic)
         return
@@ -1003,6 +983,7 @@ def _apply_active_topic() -> None:
 class _StatePayload(BaseModel):
     dataset:     Optional[str]   = None
     camera:      Optional[str]   = None
+    topic:       Optional[str]   = None
     episode:     Optional[int]   = Field(default=None, ge=0)
     ref_op:      Optional[float] = Field(default=None, ge=0.0, le=1.0)
     live_op:     Optional[float] = Field(default=None, ge=0.0, le=1.0)
@@ -1028,10 +1009,20 @@ class _StatePayload(BaseModel):
             raise ValueError('invalid camera key')
         return v
 
+    @field_validator('topic')
+    @classmethod
+    def _validate_topic(cls, v: Optional[str]) -> Optional[str]:
+        if v is None or v == '':
+            return v
+        if any(c in v for c in ('\x00', '\n', '\r', ' ')):
+            raise ValueError('invalid topic name')
+        return v
+
 
 @app.post('/api/state')
 def api_state_set(payload: _StatePayload) -> dict:
     selection_changed = False
+    topic_changed = False
     with _state_lock:
         if payload.dataset is not None:
             if payload.dataset != _state['dataset']:
@@ -1041,6 +1032,10 @@ def api_state_set(payload: _StatePayload) -> dict:
             if payload.camera != _state['camera']:
                 selection_changed = True
             _state['camera'] = payload.camera
+        if payload.topic is not None:
+            if payload.topic != _state['topic']:
+                topic_changed = True
+            _state['topic'] = payload.topic
         if payload.episode is not None:
             if payload.episode != _state['episode']:
                 selection_changed = True
@@ -1056,8 +1051,8 @@ def api_state_set(payload: _StatePayload) -> dict:
         out = dict(_state)
     if selection_changed:
         _reset_score_history()
-    _apply_active_topic()
-    out['active_topic'] = _topic_for_camera(out['camera']) if out['camera'] else ''
+    if topic_changed:
+        _apply_active_topic()
     return out
 
 
@@ -1065,9 +1060,27 @@ def api_state_set(payload: _StatePayload) -> dict:
 def api_state_get() -> dict:
     with _state_lock:
         out = dict(_state)
-    out['active_topic'] = _topic_for_camera(out['camera']) if out['camera'] else ''
     out['default_camera'] = DEFAULT_CAMERA_KEY
     return out
+
+
+@app.get('/api/topics')
+def api_topics() -> dict:
+    """List all discovered ROS 2 topics with their message types.
+
+    Returns every topic visible to the node (not just ``sensor_msgs/msg/Image``)
+    so the operator can see what discovery has found. The UI flags which ones
+    look like camera streams.
+    """
+    if _camera_node is None:
+        return {'topics': []}
+    topics = [
+        {'name': name, 'types': list(types)}
+        for name, types in _camera_node.list_topics()
+    ]
+    topics.sort(key=lambda t: t['name'])
+    _LOGGER.info('Topic discovery: %d topic(s) visible', len(topics))
+    return {'topics': topics}
 
 
 @app.get('/api/score')

@@ -7,6 +7,7 @@
     .replace(/"/g,'&quot;').replace(/'/g,'&#39;');
   let currentDs = null;
   let currentCamera = '';
+  let currentTopic = '';
   let currentEpisode = 0;
   let defaultCamera = '';
 
@@ -24,6 +25,7 @@
       body: JSON.stringify({
         dataset:     currentDs ? currentDs.id : '',
         camera:      currentCamera,
+        topic:       currentTopic,
         episode:     currentEpisode,
         ref_op:      $('ref-op').value  / 100,
         live_op:     $('live-op').value / 100,
@@ -32,7 +34,6 @@
       }),
     }).then(r => r.ok ? r.json() : null).then(s => {
       if (!s) return;
-      $('topic').textContent = s.active_topic ? s.active_topic : '';
       // Clear local sparkline whenever the server confirms a selection change.
       if (s.dataset !== window.__lastDataset || s.camera !== window.__lastCamera || s.episode !== window.__lastEpisode) {
         rawPoints.length = 0; smoothPoints.length = 0;
@@ -62,11 +63,90 @@
     sel.value = pick;
     sel.disabled = (ds.cameras || []).length <= 1;
     currentCamera = pick;
+    // Auto-pick the ROS topic most similar to the chosen camera.
+    const auto = pickBestTopic(currentCamera);
+    if (auto && auto !== currentTopic) {
+      currentTopic = auto;
+      const tsel = $('ros-topic');
+      if (tsel) tsel.value = auto;
+    }
   }
   $('camera').addEventListener('change', () => {
     currentCamera = $('camera').value;
+    // Auto-pick the ROS topic most similar to the newly selected camera.
+    const auto = pickBestTopic(currentCamera);
+    if (auto && auto !== currentTopic) {
+      currentTopic = auto;
+      $('ros-topic').value = auto;
+    }
     pushState();
   });
+
+  // Longest common substring length, case-insensitive. Used to auto-match
+  // the ROS topic that looks most like the selected dataset camera key.
+  function lcsLen(a, b) {
+    a = a.toLowerCase(); b = b.toLowerCase();
+    const m = a.length, n = b.length;
+    if (!m || !n) return 0;
+    let best = 0;
+    let prev = new Uint16Array(n + 1);
+    let curr = new Uint16Array(n + 1);
+    for (let i = 1; i <= m; i++) {
+      for (let j = 1; j <= n; j++) {
+        curr[j] = a[i - 1] === b[j - 1] ? prev[j - 1] + 1 : 0;
+        if (curr[j] > best) best = curr[j];
+      }
+      [prev, curr] = [curr, prev];
+    }
+    return best;
+  }
+
+  // Discovered Image-only topic list (cached from the last /api/topics call).
+  let availableTopics = [];
+
+  function pickBestTopic(cameraKey) {
+    if (!cameraKey || !availableTopics.length) return '';
+    const short = shortCam(cameraKey);
+    let best = '', bestScore = -1;
+    for (const t of availableTopics) {
+      const score = lcsLen(short, t);
+      if (score > bestScore) { bestScore = score; best = t; }
+    }
+    // Require at least 3 shared characters to count as a meaningful match.
+    return bestScore >= 3 ? best : '';
+  }
+
+  function refreshTopics() {
+    return fetch('/api/topics').then(r => r.ok ? r.json() : null).then(d => {
+      const sel = $('ros-topic');
+      const prev = currentTopic || sel.value;
+      const all = (d && d.topics) || [];
+      const topics = all.filter(t => (t.types || []).includes('sensor_msgs/msg/Image'));
+      availableTopics = topics.map(t => t.name);
+      sel.innerHTML = `<option value="">(none — ${topics.length} camera topic(s) discovered)</option>`;
+      topics.forEach(t => {
+        const o = document.createElement('option');
+        o.value = t.name;
+        o.textContent = t.name;
+        sel.appendChild(o);
+      });
+      // Preserve prior selection if still present; otherwise auto-match to camera.
+      let pick = '';
+      if (prev && availableTopics.includes(prev)) pick = prev;
+      else pick = pickBestTopic(currentCamera);
+      sel.value = pick;
+      if (pick !== currentTopic) {
+        currentTopic = pick;
+        pushState();
+      }
+    }).catch(() => {});
+  }
+  $('ros-topic').addEventListener('change', () => {
+    currentTopic = $('ros-topic').value;
+    pushState();
+  });
+  $('refresh-topics').addEventListener('click', refreshTopics);
+  refreshTopics();
 
   function setActive(ds, preferCamera) {
     currentDs = ds;
