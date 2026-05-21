@@ -1,0 +1,21 @@
+# Dependencies (installed fresh via npm ci in build stage)
+node_modules/
+
+# Build output (produced inside container)
+dist/
+
+# Environment files
+.env
+.env.*
+
+# Test and lint config (not needed in image)
+vitest.config.ts
+eslint.config.js
+.prettierrc.json
+.prettierignore
+
+# IDE / OS
+.idea/
+.vscode/
+*.swp
+.DS_Store

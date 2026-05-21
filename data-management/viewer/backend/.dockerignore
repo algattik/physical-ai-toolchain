@@ -1,0 +1,20 @@
+# Virtual environments
+.venv/
+venv/
+
+# Tests (not needed in production image)
+tests/
+
+# Python bytecode
+__pycache__/
+*.pyc
+*.pyo
+
+# Environment files
+.env*
+
+# IDE / OS
+.idea/
+.vscode/
+*.swp
+.DS_Store
