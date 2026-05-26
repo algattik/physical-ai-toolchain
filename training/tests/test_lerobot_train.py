@@ -226,9 +226,7 @@ class TestMultiGpuHelpers:
 
     def test_wrap_with_accelerate_prepends_flags(self, monkeypatch):
         monkeypatch.setattr(_MOD, "_resolve_lerobot_train", lambda: "/v/bin/lerobot-train")
-        wrapped = _MOD._wrap_with_accelerate(
-            ["lerobot-train", "--steps=10"], num_gpus=4, mixed_precision="bf16"
-        )
+        wrapped = _MOD._wrap_with_accelerate(["lerobot-train", "--steps=10"], num_gpus=4, mixed_precision="bf16")
         assert wrapped[:5] == [
             "accelerate",
             "launch",

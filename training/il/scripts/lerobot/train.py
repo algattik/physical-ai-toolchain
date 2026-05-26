@@ -99,9 +99,7 @@ def _read_mixed_precision() -> str:
     """Parse MIXED_PRECISION env var; default 'no'; raise on invalid input."""
     raw = os.environ.get("MIXED_PRECISION", "no").strip().lower() or "no"
     if raw not in _VALID_MIXED_PRECISION:
-        raise RuntimeError(
-            f"MIXED_PRECISION must be one of {sorted(_VALID_MIXED_PRECISION)} (got {raw!r})"
-        )
+        raise RuntimeError(f"MIXED_PRECISION must be one of {sorted(_VALID_MIXED_PRECISION)} (got {raw!r})")
     return raw
 
 
