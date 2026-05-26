@@ -78,11 +78,12 @@ AZURE CONTEXT:
         --resource-group NAME     Azure resource group
         --workspace-name NAME     Azure ML workspace
         --compute TARGET          Compute target override
-        --instance-type NAME      Instance type (default: gpuspot). Applies only
-                                  on AzureML-on-Kubernetes compute; on AzureML
-                                  managed AmlCompute this flag is ignored by
-                                  AzureML and pod GPU count comes from the
-                                  cluster's VM SKU. The training wrapper
+        --instance-type NAME      Instance type (default: gpuspot). Only honoured
+                                  on AzureML-on-Kubernetes compute. On AzureML
+                                  managed AmlCompute the script detects the
+                                  compute type and drops the flag (GPU count
+                                  visible to the job container comes from the
+                                  cluster's VM SKU). The training wrapper
                                   auto-detects the visible GPU count via
                                   torch.cuda.device_count() on both paths and
                                   enables Accelerate multi-GPU launch when N>1.
@@ -91,7 +92,7 @@ AZURE CONTEXT:
                                   infrastructure/setup/manifests/azureml-instance-types.yaml).
         --mixed-precision MODE    Accelerate mixed-precision mode (no|fp16|bf16);
                                   default: no. Only effective when more than
-                                  one GPU is visible to the pod.
+                                  one GPU is visible to the job container.
         --experiment-name NAME    Experiment name override
         --display-name NAME       Display name override
         --stream                  Stream logs after submission

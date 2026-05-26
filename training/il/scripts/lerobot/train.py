@@ -22,8 +22,9 @@ Environment variables:
         flag is ignored.
 
 The number of GPUs is detected at runtime via ``torch.cuda.device_count()`` --
-i.e., from the Kubernetes pod's ``nvidia.com/gpu`` allocation, which is set by
-the AzureML ``InstanceType`` chosen at submission. When detection returns
+i.e., from the GPU devices the job container can see. On AzureML-on-Kubernetes
+that is driven by the ``InstanceType``'s ``nvidia.com/gpu`` request; on managed
+``AmlCompute`` it is the cluster VM SKU's GPU count. When detection returns
 > 1, ``lerobot-train`` is launched via
 ``accelerate launch --multi_gpu --num_processes=N``.
 """
@@ -72,13 +73,14 @@ _VALID_MIXED_PRECISION = {"no", "fp16", "bf16"}
 
 
 def _detect_num_gpus() -> int:
-    """Detect the number of CUDA devices visible to this pod.
+    """Detect the number of CUDA devices visible to the job container.
 
-    The K8s pod's ``nvidia.com/gpu`` resource request (set by the AzureML
-    ``InstanceType``) is the single source of truth: ``torch.cuda.device_count()``
-    reports exactly what the container can see. For MIG-sliced SKUs (e.g., RTX
-    PRO 6000 with ``mig.strategy=single``) this counts slices, which is what
-    Accelerate wants for ``--num_processes``.
+    ``torch.cuda.device_count()`` reports exactly what the container can see,
+    which on AzureML-on-Kubernetes is the pod's ``nvidia.com/gpu`` request
+    (set by the chosen ``InstanceType``) and on managed ``AmlCompute`` is the
+    cluster VM SKU's GPU count. For MIG-sliced SKUs (e.g., RTX PRO 6000 with
+    ``mig.strategy=single``) this counts slices, which is what Accelerate
+    wants for ``--num_processes``.
 
     Returns 1 when ``torch`` is not importable (unit-test environments) so the
     rest of the wrapper still functions deterministically.
@@ -530,10 +532,11 @@ def main() -> int:
     if os.environ.get("STORAGE_ACCOUNT"):
         source = "osmo-azure-data-training"
 
-    # Single-node multi-GPU: detect GPU count from the pod's CUDA visibility
-    # (set by the AzureML InstanceType's `nvidia.com/gpu` request) and, when
-    # > 1, wrap the command with `accelerate launch` and strip --policy.use_amp
-    # (ignored under Accelerate per the HF guide).
+    # Single-node multi-GPU: detect the GPU count visible to the job container
+    # (AzureML-on-Kubernetes: pod's `nvidia.com/gpu` request via InstanceType;
+    # AmlCompute: cluster VM SKU's GPU count) and, when > 1, wrap with
+    # `accelerate launch` and strip --policy.use_amp (ignored under Accelerate
+    # per the HF guide).
     num_gpus = _detect_num_gpus()
     mixed_precision = _read_mixed_precision()
     if num_gpus > 1:

@@ -59,8 +59,8 @@ LeRobot training on Azure ML supports single-node multi-GPU execution via [Huggi
 
 Both AzureML compute backends are supported. GPU count is determined by the backend:
 
-- **AzureML managed compute (`AmlCompute`):** pod GPU count equals the cluster's VM SKU GPU count (e.g., `Standard_NC48ads_A100_v4` → 2, `Standard_NC96ads_A100_v4` → 4). Pass `--compute <cluster-name>` (matching an entry in `aml_compute_clusters`). `--instance-type` is silently ignored by AzureML on this path.
-- **AzureML-on-Kubernetes (Arc-attached AKS):** pod GPU count is the `InstanceType` CRD's `nvidia.com/gpu: N` request. `gpu2`/`gpuspot2`/`gpu4`/`gpuspot4` are shipped in `infrastructure/setup/manifests/azureml-instance-types.yaml` and require a node SKU with at least `N` GPUs (e.g., `Standard_NC128ds_xl_RTXPRO6000BSE_v6` for `N=4`).
+- **AzureML managed compute (`AmlCompute`):** GPU count visible to the job container equals the cluster's VM SKU GPU count (e.g., `Standard_NC48ads_A100_v4` → 2, `Standard_NC96ads_A100_v4` → 4). Pass `--compute <cluster-name>` (matching an entry in `aml_compute_clusters`).
+- **AzureML-on-Kubernetes (Arc-attached AKS):** GPU count visible to the job container is the `InstanceType` CRD's `nvidia.com/gpu: N` request. `gpu2`/`gpuspot2`/`gpu4`/`gpuspot4` are shipped in `infrastructure/setup/manifests/azureml-instance-types.yaml` and require a node SKU with at least `N` GPUs (e.g., `Standard_NC128ds_xl_RTXPRO6000BSE_v6` for `N=4`).
 
 Managed compute example:
 

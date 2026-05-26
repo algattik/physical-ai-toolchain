@@ -87,8 +87,9 @@ echo "[ENTRY] Final lerobot-train args:"
 printf '  %s\n' "${train_args[@]}"
 
 # GPU topology diagnostics: log visible devices before train.py runs the
-# torch.cuda detection. The InstanceType chosen at submission determines
-# the pod's `nvidia.com/gpu` allocation; train.py auto-wraps with
+# torch.cuda detection. On AzureML-on-Kubernetes the InstanceType chosen at
+# submission determines the container's `nvidia.com/gpu` allocation; on
+# AmlCompute it is the cluster VM SKU's GPU count. train.py auto-wraps with
 # `accelerate launch` when the visible count is > 1.
 echo "[ENTRY] CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES:-<unset>}"
 echo "[ENTRY] MIXED_PRECISION=${MIXED_PRECISION:-no}"
