@@ -33,12 +33,18 @@ fi
 # fetch a 3.12 toolchain and install everything into a dedicated venv;
 # subsequent `python3` and `lerobot-train` invocations resolve through the
 # venv's bin directory once it is on PATH.
+#
+# `--no-deps` is required: requirements.txt is a fully-resolved lockfile
+# emitted by `uv pip compile`, and pyproject.toml carries `override-dependencies`
+# entries (e.g., azure-storage-blob==12.29.0 above azureml-mlflow's <=12.27.1
+# cap) that are honored at compile time only. Re-resolving at install time
+# would fail with the same conflicts the overrides were added to bypass.
 LEROBOT_VENV="/opt/lerobot-venv"
 uv python install 3.12
 uv venv --python 3.12 "${LEROBOT_VENV}"
 # shellcheck disable=SC1091
 source "${LEROBOT_VENV}/bin/activate"
-uv pip install --requirement "${LEROBOT_REQUIREMENTS}"
+uv pip install --no-cache-dir --no-deps --requirement "${LEROBOT_REQUIREMENTS}"
 
 # Build args forwarded to the MLflow training wrapper. Only flags whose values
 # are not derivable from environment variables go here. The wrapper at
@@ -79,6 +85,16 @@ fi
 
 echo "[ENTRY] Final lerobot-train args:"
 printf '  %s\n' "${train_args[@]}"
+
+# GPU topology diagnostics: log visible devices before train.py runs the
+# torch.cuda detection. The InstanceType chosen at submission determines
+# the pod's `nvidia.com/gpu` allocation; train.py auto-wraps with
+# `accelerate launch` when the visible count is > 1.
+echo "[ENTRY] CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES:-<unset>}"
+echo "[ENTRY] MIXED_PRECISION=${MIXED_PRECISION:-no}"
+if command -v nvidia-smi >/dev/null 2>&1; then
+  nvidia-smi -L || true
+fi
 
 # Resolve data source: Azure Blob Storage URLs or HuggingFace Hub
 if [[ -n "${BLOB_URLS:-}" ]] && [[ "${BLOB_URLS}" != "{}" ]]; then

@@ -78,7 +78,18 @@ AZURE CONTEXT:
         --resource-group NAME     Azure resource group
         --workspace-name NAME     Azure ML workspace
         --compute TARGET          Compute target override
-        --instance-type NAME      Instance type (default: gpuspot)
+        --instance-type NAME      Instance type (default: gpuspot). The selected
+                                  InstanceType's `nvidia.com/gpu: N` request
+                                  determines how many GPUs the pod gets, and
+                                  the training wrapper auto-detects N at
+                                  runtime via torch.cuda.device_count() to
+                                  enable Accelerate multi-GPU launch when N>1.
+                                  Shipped multi-GPU types: gpu2/gpuspot2,
+                                  gpu4/gpuspot4 (see
+                                  infrastructure/setup/manifests/azureml-instance-types.yaml).
+        --mixed-precision MODE    Accelerate mixed-precision mode (no|fp16|bf16);
+                                  default: no. Only effective when the chosen
+                                  InstanceType exposes more than one GPU.
         --experiment-name NAME    Experiment name override
         --display-name NAME       Display name override
         --stream                  Stream logs after submission
@@ -133,6 +144,13 @@ EXAMPLES:
       --blob-url "https://account1.blob.core.windows.net/train/pusht" \
       --blob-url "https://account2.blob.core.windows.net/val/pusht" \
       -r merged-pusht-model
+
+    # Single-node multi-GPU training (4 GPUs on a gpu4 InstanceType, bf16)
+    submit-azureml-lerobot-training.sh \
+      -d user/dataset \
+      --instance-type gpu4 \
+      --mixed-precision bf16 \
+      --batch-size 8
 
     # Register environment only (no job submission)
     submit-azureml-lerobot-training.sh -d placeholder --assets-only
@@ -205,6 +223,7 @@ mlflow_timeout="${MLFLOW_HTTP_REQUEST_TIMEOUT:-60}"
 
 compute="${AZUREML_COMPUTE:-$(get_compute_target)}"
 instance_type="gpuspot"
+mixed_precision="${MIXED_PRECISION:-no}"
 experiment_name=""
 display_name=""
 stream_logs=false
@@ -245,6 +264,7 @@ while [[ $# -gt 0 ]]; do
     --mlflow-http-timeout)        mlflow_timeout="$2"; shift 2 ;;
     --compute)                    compute="$2"; shift 2 ;;
     --instance-type)              instance_type="$2"; shift 2 ;;
+    --mixed-precision)            mixed_precision="$2"; shift 2 ;;
     --experiment-name)            experiment_name="$2"; shift 2 ;;
     --display-name)               display_name="$2"; shift 2 ;;
     --stream)                     stream_logs=true; shift ;;
@@ -280,6 +300,11 @@ esac
 if [[ -n "$init_from_policy_model" && -n "$policy_repo_id" ]]; then
   fatal "--init-from-policy-model and --policy-repo-id are mutually exclusive"
 fi
+
+case "$mixed_precision" in
+  no|fp16|bf16) ;;
+  *) fatal "--mixed-precision must be one of: no, fp16, bf16 (got '$mixed_precision')" ;;
+esac
 
 # Accept only fully-qualified, version-pinned URIs. Reject @latest and bare
 # azureml:NAME so reruns of the same job spec do not silently drift to a newer
@@ -322,6 +347,7 @@ if [[ "$config_preview" == "true" ]]; then
   print_kv "Workspace" "$workspace_name"
   print_kv "Compute" "${compute:-<not set>}"
   print_kv "Instance Type" "$instance_type"
+  print_kv "Mixed Precision" "$mixed_precision"
   print_kv "Environment" "${environment_name}:${environment_version}"
   exit 0
 fi
@@ -388,6 +414,7 @@ az_args+=(
   --set "inputs.workspace_name=$workspace_name"
   --set "inputs.mlflow_token_refresh_retries=$mlflow_retries"
   --set "inputs.mlflow_http_request_timeout=$mlflow_timeout"
+  --set "inputs.mixed_precision=$mixed_precision"
 )
 
 [[ -n "$policy_repo_id" ]]      && az_args+=(--set "inputs.policy_repo_id=$policy_repo_id")
@@ -427,6 +454,7 @@ az_args+=(
   --set "environment_variables.JOB_NAME=$job_name"
   --set "environment_variables.OUTPUT_DIR=$output_dir"
   --set "environment_variables.SAVE_FREQ=$save_freq"
+  --set "environment_variables.MIXED_PRECISION=$mixed_precision"
 )
 
 [[ -n "$policy_repo_id" ]]      && az_args+=(--set "environment_variables.POLICY_REPO_ID=$policy_repo_id")
@@ -479,6 +507,7 @@ print_kv "Policy Type" "$policy_type"
 print_kv "Image" "$image"
 print_kv "Compute" "${compute:-<not set>}"
 print_kv "Instance Type" "$instance_type"
+print_kv "Mixed Precision" "$mixed_precision"
 print_kv "Environment" "${environment_name}:${environment_version}"
 print_kv "Workspace" "$workspace_name"
 [[ ${#blob_urls[@]} -gt 0 ]] && print_kv "Blob Datasets" "${#blob_urls[@]}"

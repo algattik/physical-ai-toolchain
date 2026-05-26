@@ -43,13 +43,35 @@ Submit Isaac Lab reinforcement learning and LeRobot behavioral cloning training 
 
 ## 🤖 LeRobot Training Parameters
 
-| Parameter         | Default                                          | Description                             |
-|-------------------|--------------------------------------------------|-----------------------------------------|
-| `dataset_repo_id` | (required)                                       | HuggingFace dataset repository          |
-| `policy_type`     | `act`                                            | Policy architecture: `act`, `diffusion` |
-| `job_name`        | `lerobot-act-training`                           | Unique job identifier                   |
-| `image`           | `pytorch/pytorch:2.11.0-cuda12.8-cudnn9-runtime` | Container image                         |
-| `save_freq`       | `5000`                                           | Checkpoint save frequency               |
+| Parameter         | Default                                          | Description                               |
+|-------------------|--------------------------------------------------|-------------------------------------------|
+| `dataset_repo_id` | (required)                                       | HuggingFace dataset repository            |
+| `policy_type`     | `act`                                            | Policy architecture: `act`, `diffusion`   |
+| `job_name`        | `lerobot-act-training`                           | Unique job identifier                     |
+| `image`           | `pytorch/pytorch:2.11.0-cuda12.8-cudnn9-runtime` | Container image                           |
+| `save_freq`       | `5000`                                           | Checkpoint save frequency                 |
+| `instance_type`   | `gpuspot`                                        | InstanceType (determines pod GPU count)   |
+| `mixed_precision` | `no`                                             | Accelerate mixed precision (no/fp16/bf16) |
+
+### Single-node multi-GPU training
+
+LeRobot training on Azure ML supports single-node multi-GPU execution via [Hugging Face Accelerate](https://huggingface.co/docs/lerobot/multi_gpu_training). The GPU count is a property of the pod (set by the `InstanceType`'s `nvidia.com/gpu: N` request); the wrapper detects it at runtime via `torch.cuda.device_count()` and, when `N > 1`, automatically launches `accelerate launch --multi_gpu --num_processes=N`. No AzureML `distribution:` block is required because the run stays within one pod.
+
+Prerequisites:
+
+- A node SKU with at least `N` GPUs (e.g., `Standard_NC128ds_xl_RTXPRO6000BSE_v6` for `N=4`).
+- A matching AzureML `InstanceType` CRD that requests `nvidia.com/gpu: N` (`gpu2`/`gpuspot2`/`gpu4`/`gpuspot4` are shipped in `infrastructure/setup/manifests/azureml-instance-types.yaml`).
+
+```bash
+./scripts/submit-azureml-lerobot-training.sh \
+  --dataset-repo-id user/dataset \
+  --instance-type gpu4 \
+  --mixed-precision bf16 \
+  --batch-size 8
+```
+
+> [!NOTE]
+> LeRobot does NOT auto-scale the learning rate or training steps with GPU count. The effective batch size is `batch_size × num_gpus` (logged to MLflow as `effective_batch_size`); adjust `--steps` and `--learning-rate` manually if you want to match a single-GPU baseline. The `--policy.use_amp` flag is ignored under Accelerate and is stripped by the wrapper with a warning.
 
 ## 🔧 Environment Variables
 
