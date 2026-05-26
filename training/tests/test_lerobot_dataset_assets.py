@@ -372,6 +372,31 @@ _SUBMIT_SCRIPT = _REPO_ROOT / "training/il/scripts/submit-azureml-lerobot-traini
 _ENTRY_SCRIPT = _REPO_ROOT / "training/il/scripts/lerobot/azureml-train-entry.sh"
 
 
+# Stub `az` covering only the calls that `submit-azureml-lerobot-training.sh`
+# makes during the argument-parse / validate phase (`extension show`,
+# `environment create`). Tests that drive a full submission pass their own,
+# richer stub via env_extra["PATH"], which is honored by _run_submit_job.
+@pytest.fixture(scope="module", autouse=True)
+def _stub_az_on_path(tmp_path_factory: pytest.TempPathFactory) -> Path:
+    bin_dir = tmp_path_factory.mktemp("az-stub-bin")
+    az = bin_dir / "az"
+    az.write_text(
+        "#!/usr/bin/env bash\n"
+        'if [[ "${1:-}" == "extension" && "${2:-}" == "show" ]]; then exit 0; fi\n'
+        'if [[ "${1:-}" == "ml" && "${2:-}" == "environment" && "${3:-}" == "create" ]]; then exit 0; fi\n'
+        'echo "az-stub: unsupported call: $*" >&2\n'
+        "exit 64\n",
+        encoding="utf-8",
+    )
+    az.chmod(0o755)
+    original_path = os.environ.get("PATH", "")
+    os.environ["PATH"] = f"{bin_dir}{os.pathsep}{original_path}"
+    try:
+        yield bin_dir
+    finally:
+        os.environ["PATH"] = original_path
+
+
 def _run_submit(*args: str, env_extra: dict[str, str] | None = None) -> subprocess.CompletedProcess:
     env = os.environ.copy()
     env.update(
