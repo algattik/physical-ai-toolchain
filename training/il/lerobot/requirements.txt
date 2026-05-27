@@ -95,7 +95,6 @@ charset-normalizer==3.4.7
 click==8.4.1
     # via
     #   mlflow-skinny
-    #   typer
     #   uvicorn
     #   wandb
 cloudpickle==3.1.2
@@ -117,9 +116,9 @@ cryptography==46.0.7
     #   pyjwt
 cuda-bindings==12.9.4
     # via torch
-cuda-pathfinder==1.5.4
+cuda-pathfinder==1.5.5
     # via cuda-bindings
-databricks-sdk==0.111.0
+databricks-sdk==0.112.0
     # via mlflow-skinny
 datasets==4.8.5
     # via
@@ -592,7 +591,7 @@ tqdm==4.67.3
     #   huggingface-hub
 triton==3.6.0
     # via torch
-typer==0.25.1
+typer==0.26.2
     # via huggingface-hub
 typing-extensions==4.15.0
     # via
