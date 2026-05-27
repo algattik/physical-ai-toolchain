@@ -230,7 +230,7 @@ dataset_assets = sys.argv[4:]
 lines = source.read_text(encoding="utf-8").splitlines()
 
 try:
-    inputs_index = next(i for i, line in enumerate(lines) if line == "inputs:")
+    inputs_index = next(i for i, line in enumerate(lines) if line.rstrip() == "inputs:")
 except StopIteration:
     raise SystemExit(f"Job YAML has no top-level inputs: block: {source}")
 
