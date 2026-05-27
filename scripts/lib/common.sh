@@ -39,6 +39,31 @@ require_tools() {
   [[ ${#missing[@]} -eq 0 ]] || fatal "Missing required tools: ${missing[*]}"
 }
 
+find_latest_chart_archive() {
+  local output_dir="$1"
+  local latest="" chart_archive
+
+  while IFS= read -r -d '' chart_archive; do
+    if [[ -z "$latest" || "$chart_archive" -nt "$latest" ]]; then
+      latest="$chart_archive"
+    fi
+  done < <(find "$output_dir" -maxdepth 1 -type f -name '*.tgz' -print0)
+
+  echo "$latest"
+}
+
+calculate_sha256() {
+  local file="$1"
+
+  if command -v sha256sum &>/dev/null; then
+    sha256sum "$file" | awk '{print $1}'
+  elif command -v shasum &>/dev/null; then
+    shasum -a 256 "$file" | awk '{print $1}'
+  else
+    fatal "Missing required tool: sha256sum or shasum"
+  fi
+}
+
 # Activate local OSMO development CLI wrapper
 activate_local_osmo() {
   local repo_root
@@ -81,16 +106,16 @@ pull_and_verify_chart() {
     fatal "helm pull failed for $chart_ref $version"
 
   local tgz
-  tgz=$(find "$output_dir" -maxdepth 1 -name '*.tgz' -printf '%T@ %p\n' | sort -rn | head -1 | cut -d' ' -f2-)
+  tgz=$(find_latest_chart_archive "$output_dir")
   [[ -n "$tgz" ]] || fatal "No .tgz found in $output_dir after helm pull"
 
   if [[ -n "$expected_sha" ]]; then
     local actual_sha
-    actual_sha=$(sha256sum "$tgz" | awk '{print $1}')
+    actual_sha=$(calculate_sha256 "$tgz")
     if [[ "$actual_sha" != "$expected_sha" ]]; then
       fatal "SHA256 mismatch for $tgz: expected=$expected_sha actual=$actual_sha. Run scripts/update-chart-hashes.sh to update pinned hashes."
     fi
-    info "Chart hash verified: $tgz ($actual_sha)"
+    info "Chart hash verified: $tgz ($actual_sha)" >&2
   else
     warn "No expected hash provided for $chart_ref $version — skipping verification. Run scripts/update-chart-hashes.sh to generate and pin a hash."
   fi

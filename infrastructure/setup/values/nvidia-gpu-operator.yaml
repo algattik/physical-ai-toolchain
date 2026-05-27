@@ -119,6 +119,7 @@ nodeStatusExporter:
 # Validator
 validator:
   enabled: true
+  plugin: null
   tolerations:
     - key: nvidia.com/gpu
       operator: Exists
