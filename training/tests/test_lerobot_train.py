@@ -207,7 +207,9 @@ class TestMultiGpuHelpers:
         with pytest.raises(RuntimeError, match="MIXED_PRECISION must be one of"):
             _MOD._read_mixed_precision()
 
-    def test_strip_use_amp_bare_with_value(self):
+    def test_strip_use_amp_space_separated_value(self):
+        # draccus accepts "--flag value" (argparse action='store', no nargs);
+        # both tokens must be dropped or 'value' becomes an orphan positional.
         cleaned = _MOD._strip_use_amp(["--policy.use_amp", "true", "--keep=me"])
         assert cleaned == ["--keep=me"]
 
