@@ -84,7 +84,7 @@ strip_v_prefix() {
 pull_chart_sha() {
   local chart_ref="$1" version="$2" dest="$3"
   mkdir -p "$dest"
-  helm pull "$chart_ref" --version "$version" --destination "$dest" || \
+  helm pull "$chart_ref" --version "$version" --destination "$dest" >&2 || \
     fatal "helm pull failed for $chart_ref $version"
   local tgz
   tgz=$(find_latest_chart_archive "$dest")

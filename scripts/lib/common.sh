@@ -98,11 +98,12 @@ require_az_extension() {
 #   expected_sha256 — expected SHA256 digest; empty string skips verification
 #   output_dir    — directory to store the downloaded .tgz
 # Prints the path to the downloaded .tgz on stdout.
+# Stdout is the return channel; send diagnostics to stderr.
 pull_and_verify_chart() {
   local chart_ref="$1" version="$2" expected_sha="$3" output_dir="$4"
   mkdir -p "$output_dir"
 
-  helm pull "$chart_ref" --version "$version" --destination "$output_dir" || \
+  helm pull "$chart_ref" --version "$version" --destination "$output_dir" >&2 || \
     fatal "helm pull failed for $chart_ref $version"
 
   local tgz
