@@ -106,9 +106,9 @@ if [[ "$skip_gpu" == "false" ]]; then
   helm repo add nvidia "$HELM_REPO_GPU_OPERATOR" >/dev/null 2>&1 || true
   helm repo update >/dev/null 2>&1
 
-  gpu_chart_args=( nvidia/gpu-operator --version "${gpu_version#v}" )
+  gpu_chart_args=( nvidia/gpu-operator --version "$gpu_version" )
   if [[ -n "${GPU_OPERATOR_CHART_SHA256:-}" ]]; then
-    gpu_tgz=$(pull_and_verify_chart "nvidia/gpu-operator" "${gpu_version#v}" "$GPU_OPERATOR_CHART_SHA256" "$(mktemp -d)")
+    gpu_tgz=$(pull_and_verify_chart "nvidia/gpu-operator" "$gpu_version" "$GPU_OPERATOR_CHART_SHA256" "$(mktemp -d)")
     gpu_chart_args=( "$gpu_tgz" )
   fi
 
