@@ -94,7 +94,7 @@ require_az_extension() {
 # Pull a Helm chart and optionally verify its SHA256 hash.
 # Usage: pull_and_verify_chart <chart_ref> <version> <expected_sha256> <output_dir>
 #   chart_ref     — repo/chart name or oci:// URI
-#   version       — chart version (without leading 'v')
+#   version       — exact chart version passed to helm pull
 #   expected_sha256 — expected SHA256 digest; empty string skips verification
 #   output_dir    — directory to store the downloaded .tgz
 # Prints the path to the downloaded .tgz on stdout.
