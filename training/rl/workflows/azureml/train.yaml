@@ -54,6 +54,7 @@ environment_variables:
   PYTHON: /workspace/isaaclab/isaaclab.sh -p
   ACCEPT_EULA: "Y"
   PRIVACY_CONSENT: "Y"
+  HYDRA_FULL_ERROR: "1"
   TRAINING_CHECKPOINT_OUTPUT: ${{outputs.checkpoints}}
   # The following are set by submit-azureml-training.sh via --set flags
   # AZURE_SUBSCRIPTION_ID: <set by script>
