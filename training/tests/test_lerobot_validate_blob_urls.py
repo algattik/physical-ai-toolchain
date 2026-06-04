@@ -112,6 +112,10 @@ class TestValidateRejects:
         with pytest.raises(SystemExit, match="must not contain control characters"):
             _validate(url)
 
+    def test_single_quote_in_path(self):
+        with pytest.raises(SystemExit, match="must not contain single-quote"):
+            _validate("https://acct.blob.core.windows.net/c/it's-path")
+
     @pytest.mark.parametrize(
         "url",
         [

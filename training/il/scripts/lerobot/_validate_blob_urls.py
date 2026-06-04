@@ -24,8 +24,11 @@ def validate(urls: list[str]) -> None:
     """Raise :class:`SystemExit` on the first malformed blob URL.
 
     Mirrors the constraints applied by
-    :func:`training.il.scripts.lerobot.download_dataset.parse_blob_url` so a
-    URL accepted here will also be accepted by the downloader at run-time.
+    :func:`training.il.scripts.lerobot.download_dataset.parse_blob_url`,
+    so a URL accepted here will also be accepted by the downloader at
+    run-time. Additional checks (control characters, explicit ports,
+    query strings, userinfo, AzureML identifiers, and single quotes)
+    catch misuse at submission time rather than container start-up.
     """
     if not urls:
         raise SystemExit("--blob-url: at least one Blob URL is required.")
@@ -37,6 +40,12 @@ def validate(urls: list[str]) -> None:
             raise SystemExit(
                 f"--blob-url must not contain control characters (CR, LF, NUL, …); "
                 f"these enable log injection in downstream surfaces: {url!r}"
+            )
+        if "'" in url:
+            raise SystemExit(
+                "--blob-url must not contain single-quote characters; "
+                "they corrupt the YAML single-quoted string that expands blob_urls "
+                f"in the OSMO workflow template: {url!r}"
             )
 
         lowered = url.lower()

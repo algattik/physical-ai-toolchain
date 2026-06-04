@@ -9,8 +9,6 @@ import time
 from pathlib import Path
 from typing import Any
 
-from training.il.scripts.lerobot._env import parse_url_list_env
-
 EXIT_SUCCESS = 0
 EXIT_FAILURE = 1
 _AZUREML_TAG_VALUE_MAX_LENGTH = 256
@@ -51,11 +49,13 @@ def _parse_with_diagnostic(raw: str, var_name: str) -> list[str]:
     if not raw:
         return []
     try:
-        json.loads(raw)
+        parsed = json.loads(raw)
     except (json.JSONDecodeError, TypeError) as exc:
         print(f"[AzureML] Failed to parse {var_name}: {exc}. Falling back to other dataset source metadata.")
         return []
-    return parse_url_list_env(raw)
+    if not isinstance(parsed, list):
+        return []
+    return [item.strip() for item in parsed if isinstance(item, str) and item.strip()]
 
 
 def _get_aml_client() -> Any | None:
