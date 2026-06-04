@@ -1271,6 +1271,25 @@ class TestCloseSimulation:
             _MOD._close_simulation(None)
         assert called == [0]
 
+    def test_exception_propagating_through_finally(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Locks the call-site contract: a SystemExit propagating through the
+        ``finally`` block in ``run_training`` is observable via ``sys.exc_info()``
+        even with no enclosing ``except``. If this ever stopped holding,
+        ``_close_simulation`` would silently exit 0 and mask a failed job.
+        """
+        called: list[int] = []
+        monkeypatch.setattr(_MOD.os, "_exit", lambda code: called.append(code))
+
+        def run() -> None:
+            try:
+                raise SystemExit(1)
+            finally:
+                _MOD._close_simulation(None)
+
+        with contextlib.suppress(SystemExit):
+            run()
+        assert called == [1]
+
 
 # ---------------------------------------------------------------------------
 # _prepare_launch_state, _instantiate_environment, _initialize_runner
