@@ -68,6 +68,53 @@ class TestParseKValue:
         assert _MOD._parse_k_value("1.5K") == 1500.0
 
 
+class TestSyncCheckpointOutput:
+    """``_sync_checkpoint_output`` mirrors ``OUTPUT_DIR/checkpoints/`` into the
+    AzureML ``checkpoints`` named output (env var ``AZURE_ML_OUTPUT_CHECKPOINTS``)."""
+
+    def test_no_target_does_nothing(self, tmp_path, monkeypatch):
+        monkeypatch.delenv("AZURE_ML_OUTPUT_CHECKPOINTS", raising=False)
+        (tmp_path / "checkpoints").mkdir()
+        _MOD._sync_checkpoint_output(tmp_path)
+
+    def test_missing_source_does_nothing(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("AZURE_ML_OUTPUT_CHECKPOINTS", str(tmp_path / "out"))
+        _MOD._sync_checkpoint_output(tmp_path)
+        assert not (tmp_path / "out").exists()
+
+    def test_copies_to_destination(self, tmp_path, monkeypatch):
+        src = tmp_path / "checkpoints"
+        src.mkdir()
+        (src / "ckpt.safetensors").write_text("data")
+        dest = tmp_path / "out"
+        monkeypatch.setenv("AZURE_ML_OUTPUT_CHECKPOINTS", str(dest))
+
+        _MOD._sync_checkpoint_output(tmp_path)
+
+        assert (dest / "ckpt.safetensors").read_text() == "data"
+
+    def test_replaces_existing_destination(self, tmp_path, monkeypatch):
+        src = tmp_path / "checkpoints"
+        src.mkdir()
+        (src / "new.safetensors").write_text("new")
+        dest = tmp_path / "out"
+        dest.mkdir()
+        (dest / "stale.safetensors").write_text("stale")
+        monkeypatch.setenv("AZURE_ML_OUTPUT_CHECKPOINTS", str(dest))
+
+        _MOD._sync_checkpoint_output(tmp_path)
+
+        assert (dest / "new.safetensors").exists()
+        assert not (dest / "stale.safetensors").exists()
+
+    def test_swallows_copy_errors(self, tmp_path, monkeypatch):
+        (tmp_path / "checkpoints").mkdir()
+        monkeypatch.setenv("AZURE_ML_OUTPUT_CHECKPOINTS", str(tmp_path / "out"))
+        monkeypatch.setattr(_MOD.shutil, "copytree", MagicMock(side_effect=OSError("denied")))
+        # Should not raise.
+        _MOD._sync_checkpoint_output(tmp_path)
+
+
 class TestInitSystemCollector:
     def test_disabled_via_env(self, monkeypatch):
         monkeypatch.setenv("SYSTEM_METRICS", "false")

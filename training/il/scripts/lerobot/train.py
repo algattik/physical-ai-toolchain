@@ -74,6 +74,33 @@ _PROCESS_GROUP_KILL_GRACE_S = 15
 _VALID_MIXED_PRECISION = {"no", "fp16", "bf16"}
 
 
+def _sync_checkpoint_output(output_dir: Path) -> None:
+    """Mirror ``output_dir/checkpoints/`` into ``$AZURE_ML_OUTPUT_CHECKPOINTS`` if set.
+
+    Azure ML exports ``AZURE_ML_OUTPUT_<NAME>`` for each ``uri_folder`` output
+    declared on the job; whatever lands in that directory is uploaded to the
+    named output's blob path at job end. No-op when the env var is unset
+    (e.g., local runs) or when there is nothing to copy.
+    """
+
+    target = os.environ.get("AZURE_ML_OUTPUT_CHECKPOINTS")
+    if not target:
+        return
+
+    source = output_dir / "checkpoints"
+    if not source.exists():
+        return
+
+    destination = Path(target)
+    try:
+        if destination.exists():
+            shutil.rmtree(destination)
+        shutil.copytree(source, destination, dirs_exist_ok=True)
+        print(f"[AzureML] Copied checkpoints to {destination}")
+    except Exception as exc:
+        print(f"[AzureML] Failed to copy checkpoints to {destination}: {exc}")
+
+
 def _detect_num_gpus() -> int:
     """Detect the number of CUDA devices visible to the job container.
 
@@ -367,9 +394,7 @@ def run_training(cmd: list[str], source: str = "osmo-lerobot-training", num_gpus
         )
 
         def signal_handler(signum: int, frame: object) -> None:
-            print(f"[MLflow] Received signal {signum}, saving checkpoints and terminating subprocess group...")
-            with contextlib.suppress(Exception):
-                upload_new_checkpoints(run, output_dir, uploaded_checkpoints, source=source)
+            print(f"[MLflow] Received signal {signum}, terminating subprocess group then mirroring checkpoints...")
             with contextlib.suppress(ProcessLookupError):
                 os.killpg(process.pid, signal.SIGTERM)
             try:
@@ -381,6 +406,16 @@ def run_training(cmd: list[str], source: str = "osmo-lerobot-training", num_gpus
                 )
                 with contextlib.suppress(ProcessLookupError):
                     os.killpg(process.pid, signal.SIGKILL)
+                with contextlib.suppress(subprocess.TimeoutExpired):
+                    process.wait(timeout=5)
+            # Workers are now quiescent; safe to read the on-disk checkpoint tree
+            # without risking partial-file mirrors. Doing the copy before kill
+            # would race accelerate workers still writing to checkpoint shards
+            # and could mirror a half-written destination.
+            with contextlib.suppress(Exception):
+                upload_new_checkpoints(run, output_dir, uploaded_checkpoints, source=source)
+            with contextlib.suppress(Exception):
+                _sync_checkpoint_output(output_dir)
 
         signal.signal(signal.SIGTERM, signal_handler)
         signal.signal(signal.SIGINT, signal_handler)
@@ -424,6 +459,7 @@ def run_training(cmd: list[str], source: str = "osmo-lerobot-training", num_gpus
 
         print("[MLflow] Uploading final checkpoints...")
         upload_new_checkpoints(run, output_dir, uploaded_checkpoints, source=source)
+        _sync_checkpoint_output(output_dir)
 
         mlflow.log_param("output_dir", str(output_dir))
 
@@ -515,6 +551,7 @@ def main() -> int:
         "LEARNING_RATE": "--policy.optimizer_lr",
         "EVAL_FREQ": "--eval_freq",
         "SAVE_FREQ": "--save_freq",
+        "LOG_FREQ": "--log_freq",
     }
     for env_var, arg_name in env_arg_map.items():
         if arg_name not in cli_text:
