@@ -122,9 +122,15 @@ def _build_parser(app_launcher_cls: Any) -> argparse.ArgumentParser:
 
 
 def _sync_checkpoint_output(checkpoint_dir: Path) -> None:
-    """Copy checkpoints into AzureML outputs when TRAINING_CHECKPOINT_OUTPUT is set."""
+    """Copy ``checkpoint_dir`` into ``$AZURE_ML_OUTPUT_CHECKPOINTS`` if set.
 
-    target = os.environ.get("TRAINING_CHECKPOINT_OUTPUT")
+    Azure ML exports ``AZURE_ML_OUTPUT_<NAME>`` for each ``uri_folder`` output
+    declared on the job; whatever the training process writes into that
+    directory is uploaded to the named output's blob path at job end. No-op
+    when the env var is unset (e.g., local runs).
+    """
+
+    target = os.environ.get("AZURE_ML_OUTPUT_CHECKPOINTS")
     if not target or not checkpoint_dir.exists():
         return
 

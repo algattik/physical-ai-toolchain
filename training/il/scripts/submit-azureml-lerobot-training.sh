@@ -76,6 +76,7 @@ TRAINING HYPERPARAMETERS:
         --batch-size N            Training batch size
         --eval-freq N             Evaluation frequency
         --save-freq N             Checkpoint save frequency (default: 5000)
+        --log-freq N              MLflow metric log frequency (default: 200)
 
 CHECKPOINT REGISTRATION:
     -r, --register-checkpoint NAME  Model name for Azure ML registration
@@ -285,6 +286,7 @@ training_steps="${TRAINING_STEPS:-}"
 batch_size="${BATCH_SIZE:-}"
 eval_freq="${EVAL_FREQ:-}"
 save_freq="${SAVE_FREQ:-5000}"
+log_freq="${LOG_FREQ:-}"
 
 register_checkpoint="${REGISTER_CHECKPOINT:-}"
 
@@ -330,6 +332,7 @@ while [[ $# -gt 0 ]]; do
     --batch-size)                 batch_size="$2"; shift 2 ;;
     --eval-freq)                  eval_freq="$2"; shift 2 ;;
     --save-freq)                  save_freq="$2"; shift 2 ;;
+    --log-freq)                   log_freq="$2"; shift 2 ;;
     -r|--register-checkpoint)     register_checkpoint="$2"; shift 2 ;;
     --subscription-id)            subscription_id="$2"; shift 2 ;;
     --resource-group)             resource_group="$2"; shift 2 ;;
@@ -593,6 +596,7 @@ az_args+=(
 [[ -n "$training_steps" ]]      && az_args+=(--set "environment_variables.TRAINING_STEPS=$training_steps")
 [[ -n "$batch_size" ]]          && az_args+=(--set "environment_variables.BATCH_SIZE=$batch_size")
 [[ -n "$eval_freq" ]]           && az_args+=(--set "environment_variables.EVAL_FREQ=$eval_freq")
+[[ -n "$log_freq" ]]            && az_args+=(--set "environment_variables.LOG_FREQ=$log_freq")
 [[ -n "$register_checkpoint" ]] && az_args+=(--set "environment_variables.REGISTER_CHECKPOINT=$register_checkpoint")
 
 if [[ ${#dataset_assets[@]} -gt 0 ]]; then

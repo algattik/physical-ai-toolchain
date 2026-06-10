@@ -408,6 +408,7 @@ enablement
 enduser
 endusers
 enhancements
+enqueueable
 entitlement
 entitlements
 epicor
@@ -582,6 +583,7 @@ inmon
 innersource
 innodb
 inprivate
+inqueue
 intel
 intellicode
 intellij
@@ -1606,6 +1608,7 @@ apikey
 # Azure NVIDIA Robotics Reference Architecture
 amlarc
 amlignore
+amloperator
 argjson
 autouse
 burstable
@@ -1648,6 +1651,7 @@ pentry
 persistenced
 pgpassword
 pname
+podgroup
 podgroups
 podmonitors
 portforward
