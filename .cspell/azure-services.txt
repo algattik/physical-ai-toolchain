@@ -65,6 +65,7 @@ Eventhouse
 eventhub
 functionalization
 keyvault
+kubelogin
 MLflow
 nodepool
 onedrive
