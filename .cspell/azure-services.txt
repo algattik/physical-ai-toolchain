@@ -80,3 +80,4 @@ southeastasia
 storageaccountendpoint
 wasbs
 westus
+workspaceblobstore

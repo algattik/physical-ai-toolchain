@@ -96,12 +96,12 @@ class TestBuildParser:
 
 class TestSyncCheckpointOutput:
     def test_no_target_does_nothing(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.delenv("TRAINING_CHECKPOINT_OUTPUT", raising=False)
+        monkeypatch.delenv("AZURE_ML_OUTPUT_CHECKPOINTS", raising=False)
         # Should silently return without error.
         _MOD._sync_checkpoint_output(tmp_path / "missing")
 
     def test_missing_source_does_nothing(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.setenv("TRAINING_CHECKPOINT_OUTPUT", str(tmp_path / "out"))
+        monkeypatch.setenv("AZURE_ML_OUTPUT_CHECKPOINTS", str(tmp_path / "out"))
         _MOD._sync_checkpoint_output(tmp_path / "does_not_exist")
         assert not (tmp_path / "out").exists()
 
@@ -110,7 +110,7 @@ class TestSyncCheckpointOutput:
         src.mkdir()
         (src / "ckpt.pt").write_text("data")
         dest = tmp_path / "out"
-        monkeypatch.setenv("TRAINING_CHECKPOINT_OUTPUT", str(dest))
+        monkeypatch.setenv("AZURE_ML_OUTPUT_CHECKPOINTS", str(dest))
 
         _MOD._sync_checkpoint_output(src)
 
@@ -123,7 +123,7 @@ class TestSyncCheckpointOutput:
         dest = tmp_path / "out"
         dest.mkdir()
         (dest / "stale.pt").write_text("stale")
-        monkeypatch.setenv("TRAINING_CHECKPOINT_OUTPUT", str(dest))
+        monkeypatch.setenv("AZURE_ML_OUTPUT_CHECKPOINTS", str(dest))
 
         _MOD._sync_checkpoint_output(src)
 
@@ -133,7 +133,7 @@ class TestSyncCheckpointOutput:
     def test_swallows_copy_errors(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         src = tmp_path / "checkpoints"
         src.mkdir()
-        monkeypatch.setenv("TRAINING_CHECKPOINT_OUTPUT", str(tmp_path / "out"))
+        monkeypatch.setenv("AZURE_ML_OUTPUT_CHECKPOINTS", str(tmp_path / "out"))
         monkeypatch.setattr(_MOD.shutil, "copytree", MagicMock(side_effect=OSError("denied")))
         # Should not raise.
         _MOD._sync_checkpoint_output(src)

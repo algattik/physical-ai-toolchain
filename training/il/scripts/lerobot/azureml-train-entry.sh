@@ -172,6 +172,10 @@ if [[ ${total_sources} -eq 0 ]]; then
   if [[ -n "${HF_TOKEN:-}" ]]; then
     python3 -c "import os; from huggingface_hub import login; login(token=os.environ['HF_TOKEN'], add_to_git_credential=False)"
   fi
+  # video_backend=pyav avoids torchcodec's dynamic-link dependency on
+  # libnvrtc.so (shipped as a pip wheel whose lib/ is not on LD_LIBRARY_PATH
+  # in a fresh venv). Consistent with the local-data paths below.
+  train_args+=(--dataset.video_backend=pyav)
 elif [[ ${total_sources} -eq 1 ]]; then
   # Single source — use directly, no merge needed.
   # use_imagenet_stats=true so lerobot normalizes images with ImageNet (3,1,1)

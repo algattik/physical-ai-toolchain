@@ -217,13 +217,13 @@ Use `simulation_shutdown.py` which stops the simulation timeline and applies a S
 
 ### Checkpoint upload fails silently
 
-**Cause:** The `TRAINING_CHECKPOINT_OUTPUT` environment variable is not set or points to a non-existent directory.
+**Cause:** The AzureML named output is wired through `${{outputs.checkpoints}}` in `environment_variables:`, which AzureML does NOT substitute (substitution only happens in `command:`). The container receives the literal template string and the sync helper writes to a relative directory of that name, leaving `cap/data-capability/wd/checkpoints/` empty.
 
 **Resolution:**
 
-1. Verify the environment variable is set in the job definition.
-2. Confirm the output path is writable during training.
-3. Check job logs for upload errors after training completes.
+1. Read `AZURE_ML_OUTPUT_CHECKPOINTS` (set by the data-capability runtime) directly in the training entry point — do not indirect through a custom env var.
+2. Confirm the named `outputs.checkpoints` `uri_folder` is declared in the job YAML.
+3. Check job logs (`system_logs/data_capability/data-capability.log`) for `uploaded N files` rather than `is empty. Skip uploading`.
 
 ## Workflow Runtime Errors
 
