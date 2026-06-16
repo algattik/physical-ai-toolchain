@@ -27,7 +27,7 @@ For quick dependency commands, see the [Component Updates](pull-request-process.
 | AzureML K8s Extension     | Azure CLI | `infrastructure/setup/defaults.conf` → `AZUREML_EXTENSION_VERSION` | 1.3.1           | Manual           |
 | Isaac Lab                 | Container | Hardcoded in 7+ files                                              | 2.3.2           | Manual grep      |
 | Azure Terraform Providers | Terraform | `versions.tf` across 8 directories                                 | Floor-pinned    | Dependabot (2/4) |
-| Python Packages           | pip/uv    | `pyproject.toml`, `requirements.txt`                               | Mixed           | Dependabot       |
+| Python Packages           | uv        | `pyproject.toml`, `uv.lock`                                        | Mixed           | Dependabot       |
 | GitHub Actions            | GitHub    | Workflow YAML (18 files)                                           | SHA-pinned      | Dependabot       |
 
 > [!IMPORTANT]
@@ -37,7 +37,7 @@ For quick dependency commands, see the [Component Updates](pull-request-process.
 
 | Ecosystem        | Tool or Method                                                | Command or Location                                   |
 |------------------|---------------------------------------------------------------|-------------------------------------------------------|
-| Python           | Dependabot PRs, `uv pip compile --upgrade`                    | `.github/dependabot.yml`, `pyproject.toml`            |
+| Python           | Dependabot PRs, `uv lock --upgrade`                           | `.github/dependabot.yml`, `pyproject.toml`            |
 | Terraform        | Dependabot PRs, `terraform init -upgrade`                     | `.github/dependabot.yml`, `infrastructure/terraform/` |
 | Helm Charts      | `helm repo update && helm search repo <chart> --versions`     | NVIDIA NGC Helm repositories                          |
 | Container Images | NVIDIA NGC catalog, GitHub release pages                      | `nvcr.io/nvidia/` namespace                           |

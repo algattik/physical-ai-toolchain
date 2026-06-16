@@ -314,6 +314,13 @@ jobs:
     permissions:
       contents: read
 
+  # uv lock/manifest consistency gate across all Python subprojects
+  uv-lock-consistency:
+    name: uv Lock Consistency
+    uses: ./.github/workflows/uv-lock-consistency.yml
+    permissions:
+      contents: read
+
   # Terraform linting using TFLint
   terraform-lint:
     name: Terraform Lint
@@ -438,6 +445,7 @@ jobs:
       - evaluation-pytests
       - fuzz-regression-tests
       - python-lint
+      - uv-lock-consistency
       - terraform-lint
       - terraform-validation
       - terraform-tests

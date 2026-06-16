@@ -1,0 +1,39 @@
+name: uv Lock Consistency
+
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  uv-lock-check:
+    name: uv Lock Check (${{ matrix.project }})
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        project:
+          - '.'
+          - data-pipeline
+          - data-management/viewer
+          - data-management/viewer/backend
+          - evaluation
+          - evaluation/sil/docker
+          - training/rl
+          - training/il/lerobot
+          - workflows/osmo
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          persist-credentials: false
+
+      - name: Setup uv
+        uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39 # v8.2.0
+
+      - name: Check lock is consistent with manifest
+        working-directory: ${{ matrix.project }}
+        run: uv lock --check
