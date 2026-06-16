@@ -40,6 +40,10 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.uv]
+# Constrain the universal lock to the Isaac Lab 2.3.2 container target so the
+# resolution yields a single marker per package, suitable for the `--no-deps`
+# build-time `uv export` in scripts/train.sh (mirrors the IL and SIL projects).
+environments = ["sys_platform == 'linux' and platform_machine == 'x86_64'"]
 # `override-dependencies` forces uv to ignore upstream upper-bound constraints
 # during resolution. Each entry below must repeat a pinned version that also
 # appears in `dependencies` above, otherwise resolution drifts. Remove an
