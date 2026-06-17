@@ -3,7 +3,7 @@ sidebar_position: 7
 title: OSMO Training Workflows
 description: Submit Isaac Lab training jobs to NVIDIA OSMO on Azure Kubernetes Service
 author: Microsoft Robotics-AI Team
-ms.date: 2026-06-03
+ms.date: 2026-06-10
 ms.topic: how-to
 keywords:
   - osmo
@@ -18,8 +18,8 @@ Submit distributed Isaac Lab training jobs through NVIDIA OSMO workflow orchestr
 
 | Component          | Requirement                                                          |
 |--------------------|----------------------------------------------------------------------|
-| OSMO control plane | Deployed via `03-deploy-osmo-control-plane.sh`                       |
-| OSMO backend       | Installed via `04-deploy-osmo-backend.sh`                            |
+| OSMO control plane | Deployed via `03-deploy-osmo.sh`                                     |
+| OSMO backend       | Installed via `03-deploy-osmo.sh`                                    |
 | Storage            | Checkpoint storage configured                                        |
 | OSMO CLI           | Installed and authenticated (see [Accessing OSMO](#-accessing-osmo)) |
 
@@ -115,8 +115,8 @@ OSMO services deploy to the `osmo-control-plane` namespace. Access method depend
 | API Service  | `http://10.0.5.7/api` |
 
 ```bash
-osmo login http://10.0.5.7 --method=dev --username=testuser
-osmo info
+osmo login http://10.0.5.7 --method=dev --username=admin
+osmo version
 ```
 
 > [!NOTE]
@@ -126,21 +126,20 @@ osmo info
 
 | Service      | Port-Forward Command                                                  | Local URL               |
 |--------------|-----------------------------------------------------------------------|-------------------------|
-| UI Dashboard | `kubectl port-forward svc/osmo-ui 3000:80 -n osmo-control-plane`      | `http://localhost:3000` |
-| API Service  | `kubectl port-forward svc/osmo-service 9000:80 -n osmo-control-plane` | `http://localhost:9000` |
-| Router       | `kubectl port-forward svc/osmo-router 8080:80 -n osmo-control-plane`  | `http://localhost:8080` |
+| Gateway      | `kubectl port-forward svc/osmo-gateway 9000:80 -n osmo-control-plane` | `http://localhost:9000` |
 
 ```bash
 # Start port-forward in background
-kubectl port-forward svc/osmo-service 9000:80 -n osmo-control-plane &
+kubectl port-forward svc/osmo-gateway 9000:80 -n osmo-control-plane &
 
-# Login and verify
-osmo login http://localhost:9000 --method=dev --username=testuser
-osmo info
+# Login and configure default pool
+osmo login http://localhost:9000 --method=dev --username=admin
+osmo profile set pool default
+osmo version
 ```
 
 > [!NOTE]
-> Port-forwarding does not support `osmo workflow exec` and `osmo workflow port-forward` commands. These require the router service accessible via ingress.
+> Port-forwarding does not support `osmo workflow exec` and `osmo workflow port-forward` commands. These require the gateway service accessible via ingress.
 
 ## 📊 Monitoring
 
@@ -149,7 +148,7 @@ Access the OSMO UI dashboard:
 | Access Method | URL                                                                                              |
 |---------------|--------------------------------------------------------------------------------------------------|
 | VPN           | `http://10.0.5.7`                                                                                |
-| Port-forward  | `http://localhost:3000` (after `kubectl port-forward svc/osmo-ui 3000:80 -n osmo-control-plane`) |
+| Port-forward  | `http://localhost:8080` (after `kubectl port-forward svc/osmo-gateway 8080:80 -n osmo-control-plane`) |
 
 ## 🚀 Quick Start
 

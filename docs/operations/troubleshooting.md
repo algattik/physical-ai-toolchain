@@ -3,7 +3,7 @@ sidebar_position: 4
 title: Troubleshooting Guide
 description: Symptom-based resolution guide for common errors in the robotics reference architecture
 author: Microsoft Robotics-AI Team
-ms.date: 2026-04-15
+ms.date: 2026-06-10
 ms.topic: troubleshooting
 keywords:
   - troubleshooting
@@ -142,7 +142,7 @@ Run `source infrastructure/terraform/prerequisites/az-sub-init.sh` before any `t
 
 1. Complete VPN deployment: `infrastructure/terraform/vpn/`.
 2. Connect the VPN client.
-3. Re-run deploy scripts in order: `01-deploy-robotics-charts.sh` through `04-deploy-osmo-backend.sh`.
+3. Re-run deploy scripts in order: `01-deploy-robotics-charts.sh` through `03-deploy-osmo.sh`.
 
 ### AzureML extension pods stuck in CrashLoopBackOff
 
@@ -154,13 +154,13 @@ Run `source infrastructure/terraform/prerequisites/az-sub-init.sh` before any `t
 2. Verify the managed identity has federated credentials for the `azureml:default` and `azureml:training` service accounts.
 3. Check subscription quota: `az vm list-usage --location <region> -o table`.
 
-### OSMO backend deployment returns oauth2Proxy errors
+### OSMO deployment returns oauth2Proxy errors
 
 **Cause:** `oauth2Proxy.enabled` is set to `true` but no OIDC provider is configured.
 
 **Resolution:**
 
-Set `oauth2Proxy.enabled: false` in the OSMO Helm values when no OIDC provider is available. See `infrastructure/setup/04-deploy-osmo-backend.sh` for the configuration.
+Set `oauth2Proxy.enabled: false` in the OSMO Helm values when no OIDC provider is available. See `infrastructure/setup/03-deploy-osmo.sh` for the configuration.
 
 ### Resource group creation fails with quota errors
 
@@ -326,7 +326,7 @@ infrastructure/setup/01-deploy-robotics-charts.sh
 
 **Resolution:**
 
-1. List available datasets: `osmo config list DATASET`.
+1. List available datasets: `osmo dataset list`.
 2. Verify the dataset name and version in the workflow environment variables match a published dataset.
 
 ### LeRobot training fails with PyTorch shared memory allocation error
@@ -341,19 +341,19 @@ RuntimeError: unable to allocate shared memory(shm) for file </torch_...>: Succe
 
 **Resolution:**
 
-OSMO mounts `/dev/shm` according to the `POD_TEMPLATE` config registered on the control plane at deploy time, with `USER_SHM_SIZE` rendered from the pool config (default `8Gi`). The mount applies only to pods created *after* the config is registered — restarting the training pod is not enough; a stuck workflow must be cancelled and resubmitted.
+OSMO mounts `/dev/shm` according to the pod template in Helm values, with `USER_SHM_SIZE` rendered from the platform config (default `16Gi` for GPU platforms). The mount applies only to pods created *after* the config is deployed — restarting the training pod is not enough; a stuck workflow must be cancelled and resubmitted.
 
 Verify the live cluster matches the deploy script's intent:
 
 ```bash
-osmo config get POD_TEMPLATE --output yaml | grep -A 3 dshm
+osmo config show POD_TEMPLATE | grep -A 3 dshm
 kubectl get pod <pod> -n osmo-workflows -o jsonpath='{.spec.volumes[?(@.name=="dshm")].emptyDir.sizeLimit}'
 kubectl get pod <pod> -n osmo-workflows -o jsonpath='{.spec.containers[?(@.name!="osmo-ctrl")].volumeMounts[?(@.mountPath=="/dev/shm")].name}'
 ```
 
-If the `POD_TEMPLATE` is missing the `dshm` mount, the registered config drifted from `infrastructure/setup/config/pod-template-config.template.json`; re-run `infrastructure/setup/04-deploy-osmo-backend.sh` to republish it. If the config is correct but a running pod lacks the mount, that pod predates the config update — cancel the workflow and submit a new one.
+If the `POD_TEMPLATE` is missing the `dshm` mount, the registered config drifted from the rendered values in `infrastructure/setup/values/osmo-platforms.yaml`; edit that file as needed, rerun `infrastructure/setup/03-deploy-osmo.sh`, and republish the config. If the config is correct but a running pod lacks the mount, that pod predates the config update — cancel the workflow and submit a new one.
 
-If new pods still exhaust `/dev/shm` with `USER_SHM_SIZE=8Gi`, raise `USER_SHM_SIZE` in `infrastructure/setup/config/pool-config.template.json` (16Gi is a safe ceiling for image-heavy ACT/Diffusion datasets), re-run `04-deploy-osmo-backend.sh`, and resubmit. Reducing `--batch-size` or `dataloader.num_workers` is the workaround when raising the mount is not an option.
+If new pods still exhaust `/dev/shm`, raise `USER_SHM_SIZE` in `infrastructure/setup/values/osmo-platforms.yaml` (current default is `16Gi` for GPU platforms), rerun `03-deploy-osmo.sh`, and resubmit. Reducing `--batch-size` is the workaround when raising the mount is not an option.
 
 ### OSMO workflow pods stuck in Pending
 
@@ -397,8 +397,8 @@ If new pods still exhaust `/dev/shm` with `USER_SHM_SIZE=8Gi`, raise `USER_SHM_S
 
 4. Cancel and resubmit the workflow. New pods pick up the updated `service_base_url`.
 
-> [!WARNING]
-> Do not set `service_base_url` to `osmo-router`. The router only handles `/api/router/` paths. The ingress controller routes all API paths (`/api/logger`, `/api/agent`, `/api/auth`, `/api`) to the correct backend services.
+> [!NOTE]
+> `service_base_url` points to `osmo-gateway`, which routes `/api/logger`, `/api/agent`, `/api/auth`, and related paths to the correct backend services.
 
 ### OSMO UI shows "server IP address could not be found" for workflow logs
 
