@@ -37,6 +37,11 @@ constraint-dependencies = [
     "gitpython==3.1.50",
     "pygments==2.20.0",
 ]
+override-dependencies = [
+    # cryptography: azureml-mlflow caps cryptography<47.0.0; override to the
+    # 48.0.1 release that patches GHSA-537c-gmf6-5ccf.
+    "cryptography==48.0.1",
+]
 
 [tool.pytest.ini_options]
 testpaths = ["tests", "training/tests", "data-management/tools/tests", "fleet-deployment/inference/tests"]
