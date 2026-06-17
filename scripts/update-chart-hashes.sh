@@ -86,9 +86,15 @@ strip_v_prefix() {
 # Paginates through the tags list API and returns the highest v* tag.
 oci_latest_version() {
   local repo="$1"
-  local token last_tag tags all_tags=""
+  local token token_url last_tag tags all_tags=""
 
-  token=$(curl -sf "https://ghcr.io/token?service=ghcr.io&scope=repository:${repo}:pull" | jq -r '.token // empty')
+  # These are GHCR registry API metadata calls (a short-lived pull token and the
+  # tags list), not artifact downloads — there is nothing to checksum here. Chart
+  # integrity is verified separately: pull_chart_sha computes the SHA256 that gets
+  # pinned in defaults.conf, and the deploy script's pull_and_verify_chart checks
+  # the downloaded chart against that pin.
+  token_url="https://ghcr.io/token?service=ghcr.io&scope=repository:${repo}:pull"
+  token=$(curl -sf "$token_url" | jq -r '.token // empty')
   [[ -n "$token" ]] || return 1
 
   last_tag=""
