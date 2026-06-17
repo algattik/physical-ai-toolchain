@@ -77,11 +77,12 @@ Submit a replay for any completed run:
 
 ### What it does
 
-| Component       | Action                                                                                                                      |
-|-----------------|-----------------------------------------------------------------------------------------------------------------------------|
-| Deploy script   | Renders `AZURE_SUBSCRIPTION_ID`, `AZURE_RESOURCE_GROUP`, `AZUREML_WORKSPACE_NAME` into the `default_user` OSMO pod template |
-| Replay workflow | Spawns an OSMO pod that reads the run's output directory                                                                    |
-| `aml_mirror.py` | Uploads tensorboard logs + filtered final checkpoint                                                                        |
+| Component       | Action                                                                                                                                   |
+|-----------------|------------------------------------------------------------------------------------------------------------------------------------------|
+| Deploy script   | Renders `AZURE_SUBSCRIPTION_ID`, `AZURE_RESOURCE_GROUP`, `AZUREML_WORKSPACE_NAME` into the `default_user` OSMO pod template              |
+| Submit script   | Derives the mirror's runtime requirements at submit time from `workflows/osmo/uv.lock` via `uv export --frozen` (no committed flat file) |
+| Replay workflow | Spawns an OSMO pod that reads the run's output directory                                                                                 |
+| `aml_mirror.py` | Uploads tensorboard logs + filtered final checkpoint                                                                                     |
 
 ### Disabling after deploy
 

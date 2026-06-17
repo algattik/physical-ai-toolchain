@@ -318,6 +318,9 @@ jobs:
   uv-lock-consistency:
     name: uv Lock Consistency
     uses: ./.github/workflows/uv-lock-consistency.yml
+    with:
+      changed-files-only: true
+      soft-fail: false
     permissions:
       contents: read
 

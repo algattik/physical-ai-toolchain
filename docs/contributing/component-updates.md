@@ -3,7 +3,7 @@ sidebar_position: 12
 title: Updating External Components
 description: Process for identifying, updating, and vetting reused externally-maintained components
 author: Microsoft Robotics-AI Team
-ms.date: 2026-06-12
+ms.date: 2026-06-16
 ms.topic: how-to
 keywords:
   - component-updates
@@ -73,6 +73,15 @@ The reviewer enriches each update with:
 The review body prepends a `⚠️ Maintainer review recommended` banner when any high-risk signal fires. Up to five inline comments are anchored to the changed manifest or lockfile lines. The workflow skips drafts and any PR that touches `.github/workflows/**`. The persona is defined in [.github/agents/dependabot-pr-reviewer.agent.md](pathname://../../.github/agents/dependabot-pr-reviewer.agent.md).
 
 Maintainers remain the source of truth — the reviewer is advisory context, not automated policy.
+
+### Python Lockfiles
+
+Every Python subproject carries a committed `uv.lock` beside its `pyproject.toml`. The lock is the single resolution source of truth — runtime-flat `requirements.txt` files are not committed.
+
+* **Regenerate** a lock with `uv lock` (or `uv lock --upgrade`) after editing `pyproject.toml`. Never hand-edit `uv.lock` and never run `uv pip compile` to produce a committed flat file.
+* **Derive** runtime dependencies at build or submit time via `uv export --frozen --no-hashes --no-emit-project` piped into `uv pip install --no-deps`. `--frozen` reads the lock without regenerating it. The OSMO replay mirror ([training/utils/replay-azureml.sh](pathname://../../training/utils/replay-azureml.sh)) derives its requirements this way from `workflows/osmo/uv.lock`.
+* **Constrain** the universal lock to supported platforms with `[tool.uv] environments` (for example linux x86_64 for GPU and Isaac subprojects). Preserve these markers when regenerating.
+* Dependabot regenerates affected locks natively on dependency PRs. The read-only `uv lock --check` gate (see [CI Validation for Dependency PRs](#ci-validation-for-dependency-prs)) fails any PR whose lock drifts from its manifest, so no manual `uv lock` step is required on Dependabot PRs.
 
 ## Manual Update Process
 
@@ -145,6 +154,7 @@ These workflows validate dependency update PRs automatically.
 | `dependency-pinning-scan.yml` | Enforce 95% SHA pinning compliance | GitHub Actions     |
 | `codeql-analysis.yml`         | Static analysis for Python code    | Python changes     |
 | `scorecard.yml`               | OpenSSF Scorecard assessment       | Repository-wide    |
+| `uv-lock-consistency.yml`     | Fail on `uv.lock`/manifest drift   | Python lockfiles   |
 
 ## Security-Critical Updates
 
