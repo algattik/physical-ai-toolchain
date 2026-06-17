@@ -89,6 +89,9 @@ override-dependencies = [
     # azure-storage-blob: azureml-mlflow==1.62.0.post2 caps below 12.29.0; we
     # need 12.29.0 for the AzureCliCredential fix shipped in that release.
     "azure-storage-blob==12.30.0",
+    # cryptography: azureml-mlflow caps below 47.0.0, but wheels before 48.0.1
+    # bundle a vulnerable OpenSSL (GHSA-537c-gmf6-5ccf); force the patched release.
+    "cryptography==48.0.1",
     # mlflow-skinny: lerobot==0.5.1 has a tighter cap; mirror the direct pin.
     "mlflow-skinny==3.13.0",
     # packaging: azureml-mlflow caps below 26.x; mirror the direct pin.
