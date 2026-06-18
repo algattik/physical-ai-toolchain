@@ -529,7 +529,7 @@ users:
       interactiveMode: Never
       provideClusterInfo: false
 KUBECONFIG_EOF
-    cat > "$_WORK_DIR/token-cred.py" <<'TOKENCRED_EOF'
+    cat > "$_WORK_DIR/token-cred.py" <<'PYTHON_EOF'
 import base64, datetime, json
 _t = open('/var/run/secrets/kubernetes.io/serviceaccount/token').read().strip()
 # Expire the cached credential ~5min before the projected token does, so the next
@@ -543,7 +543,7 @@ except Exception:
     _ts = (datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(minutes=5)).strftime('%Y-%m-%dT%H:%M:%SZ')
 print(json.dumps({'apiVersion': 'client.authentication.k8s.io/v1', 'kind': 'ExecCredential',
                   'status': {'token': _t, 'expirationTimestamp': _ts}}))
-TOKENCRED_EOF
+PYTHON_EOF
     kubectl create configmap incluster-kubeconfig -n "$NS_OSMO_OPERATOR" \
         --from-file=config="$_WORK_DIR/incluster-config" \
         --from-file=token-cred.py="$_WORK_DIR/token-cred.py" \
