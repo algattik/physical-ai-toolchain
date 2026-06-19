@@ -3,7 +3,7 @@ sidebar_position: 4
 title: Troubleshooting Guide
 description: Symptom-based resolution guide for common errors in the robotics reference architecture
 author: Microsoft Robotics-AI Team
-ms.date: 2026-06-10
+ms.date: 2026-06-19
 ms.topic: troubleshooting
 keywords:
   - troubleshooting
@@ -343,15 +343,18 @@ RuntimeError: unable to allocate shared memory(shm) for file </torch_...>: Succe
 
 OSMO mounts `/dev/shm` according to the pod template in Helm values, with `USER_SHM_SIZE` rendered from the platform config (default `16Gi` for GPU platforms). The mount applies only to pods created *after* the config is deployed — restarting the training pod is not enough; a stuck workflow must be cancelled and resubmitted.
 
-Verify the live cluster matches the deploy script's intent:
+In ConfigMap mode the pod template — including `USER_SHM_SIZE` — is the source of truth in `infrastructure/setup/values/osmo-platforms.yaml` and is rendered into the deployed ConfigMap on every run of the deploy script. Inspect the live pod to verify it received the mount, and check the values file for the size it should have:
 
 ```bash
-osmo config show POD_TEMPLATE | grep -A 3 dshm
+# Live pod (the actual verification)
 kubectl get pod <pod> -n osmo-workflows -o jsonpath='{.spec.volumes[?(@.name=="dshm")].emptyDir.sizeLimit}'
 kubectl get pod <pod> -n osmo-workflows -o jsonpath='{.spec.containers[?(@.name!="osmo-ctrl")].volumeMounts[?(@.mountPath=="/dev/shm")].name}'
+
+# Expected size in the source values (for comparison)
+grep -A 3 dshm infrastructure/setup/values/osmo-platforms.yaml
 ```
 
-If the `POD_TEMPLATE` is missing the `dshm` mount, the registered config drifted from the rendered values in `infrastructure/setup/values/osmo-platforms.yaml`; edit that file as needed, rerun `infrastructure/setup/03-deploy-osmo.sh`, and republish the config. If the config is correct but a running pod lacks the mount, that pod predates the config update — cancel the workflow and submit a new one.
+If a running pod lacks the `dshm` mount, either the values file was edited without rerunning `infrastructure/setup/03-deploy-osmo.sh` (rerun it to re-render the ConfigMap), or the pod predates the last config update — cancel the workflow and submit a new one so it picks up the current template.
 
 If new pods still exhaust `/dev/shm`, raise `USER_SHM_SIZE` in `infrastructure/setup/values/osmo-platforms.yaml` (current default is `16Gi` for GPU platforms), rerun `03-deploy-osmo.sh`, and resubmit. Reducing `--batch-size` is the workaround when raising the mount is not an option.
 
@@ -378,21 +381,24 @@ If new pods still exhaust `/dev/shm`, raise `USER_SHM_SIZE` in `infrastructure/s
      python3 -c "import sys,json; [print(a) for c in json.load(sys.stdin)['spec']['containers'] if c['name']=='osmo-ctrl' for a in c.get('args',[])]"
    ```
 
-2. If `-host` is empty (`""`), the `service_base_url` in the SERVICE config is not set:
+2. If `-host` is empty (`""`), `service_base_url` in the SERVICE config is not set. In ConfigMap mode this value is rendered from the Helm values:
 
    ```bash
-   osmo config show SERVICE | grep service_base_url
+   grep service_base_url infrastructure/setup/values/osmo-control-plane.yaml
    ```
 
-3. Set `service_base_url` to the AzureML ingress controller ClusterIP FQDN:
+3. Set `service_base_url` to the AzureML ingress controller ClusterIP FQDN by editing `infrastructure/setup/values/osmo-control-plane.yaml` (`services.configs.service.service_base_url`) and rerunning the deploy script:
+
+   ```yaml
+   # infrastructure/setup/values/osmo-control-plane.yaml
+   services:
+     configs:
+       service:
+         service_base_url: "http://azureml-ingress-nginx-controller.azureml.svc.cluster.local"
+   ```
 
    ```bash
-   osmo config show SERVICE | python3 -c "
-   import sys, json
-   c = json.load(sys.stdin)
-   c['service_base_url'] = 'http://azureml-ingress-nginx-controller.azureml.svc.cluster.local'
-   json.dump(c, sys.stdout, indent=2)" > /tmp/service-config.json
-   osmo config update SERVICE --file /tmp/service-config.json --description "Set service base URL"
+   ./infrastructure/setup/03-deploy-osmo.sh
    ```
 
 4. Cancel and resubmit the workflow. New pods pick up the updated `service_base_url`.
@@ -412,14 +418,20 @@ Connect via VPN and set `service_base_url` to the internal load balancer IP, whi
 # Find the internal LB IP
 kubectl get svc azureml-ingress-nginx-internal-lb -n azureml \
   -o jsonpath='{.status.loadBalancer.ingress[0].ip}'
+```
 
-# Update service_base_url to the internal LB IP
-osmo config show SERVICE | python3 -c "
-import sys, json
-c = json.load(sys.stdin)
-c['service_base_url'] = 'http://10.0.5.6'  # replace with actual IP
-json.dump(c, sys.stdout, indent=2)" > /tmp/service-config.json
-osmo config update SERVICE --file /tmp/service-config.json --description "Set service base URL to internal LB"
+Set that IP as `services.configs.service.service_base_url` in `infrastructure/setup/values/osmo-control-plane.yaml`, then rerun the deploy script:
+
+```yaml
+# infrastructure/setup/values/osmo-control-plane.yaml
+services:
+  configs:
+    service:
+      service_base_url: "http://10.0.5.6"  # replace with actual internal LB IP
+```
+
+```bash
+./infrastructure/setup/03-deploy-osmo.sh
 ```
 
 Without VPN, use the CLI to view workflow logs: `osmo workflow logs <workflow-id>`.

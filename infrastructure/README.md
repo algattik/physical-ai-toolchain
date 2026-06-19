@@ -26,7 +26,7 @@ infrastructure/
 ├── setup/                             # Post-deploy configuration scripts
 │   ├── 01-deploy-robotics-charts.sh   # GPU Operator, KAI Scheduler
 │   ├── 02-deploy-azureml-extension.sh # AzureML K8s extension
-│   ├── 03-deploy-osmo.sh# OSMO control plane
+│   ├── 03-deploy-osmo.sh           # OSMO service + backend operator
 │   ├── defaults.conf                  # Central version and namespace config
 │   ├── README.md                      # Setup quick start
 │   ├── lib/                           # Shared shell libraries

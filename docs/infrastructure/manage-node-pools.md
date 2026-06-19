@@ -3,7 +3,7 @@ sidebar_position: 11
 title: Manage Node Pools
 description: Add, remove, and resize AKS node pools on an existing cluster
 author: Microsoft Robotics-AI Team
-ms.date: 2026-06-02
+ms.date: 2026-06-19
 ms.topic: how-to
 keywords:
   - node-pools
@@ -150,8 +150,9 @@ Use this to add capacity (different SKU, different priority, different zones) wi
    ```bash
    kubectl get nodes -l agentpool=sdgcpu
    az aks nodepool list --resource-group <rg> --cluster-name <aks> -o table
-   osmo config show POOL
    ```
+
+   The OSMO-side pool/platform configuration is applied by the rerun in step 3; a successful run is the confirmation. The pool definition itself lives in [`infrastructure/setup/values/osmo-platforms.yaml`](../../infrastructure/setup/values/osmo-platforms.yaml).
 
 ### Remove a Pool
 

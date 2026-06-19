@@ -303,9 +303,12 @@ if [[ "$skip_mek" == "false" ]]; then
         # Clear service_auth from DB — it was encrypted with the old MEK and is now
         # undecryptable. The service regenerates a fresh keypair on next start.
         info "Clearing stale service_auth from database..."
+        # Pass the password via PGPASSWORD env, not the psql connection string:
+        # kubectl stores command args in the pod spec (etcd + audit log), but not env values.
         kubectl run osmo-clear-auth --rm -i --restart=Never -n "$NS_OSMO_CONTROL_PLANE" \
             --image=postgres:16 \
-            -- psql "host=${pg_fqdn} port=5432 dbname=osmo user=${pg_user} password=${pg_password} sslmode=require" \
+            --env="PGPASSWORD=${pg_password}" \
+            -- psql "host=${pg_fqdn} port=5432 dbname=osmo user=${pg_user} sslmode=require" \
             -c "DELETE FROM configs WHERE key='service_auth' AND type='SERVICE'" 2>/dev/null || \
             warn "Could not clear service_auth (DB may not be initialized yet — safe on first deploy)"
 
@@ -335,6 +338,7 @@ fi
 service_helm_args=(
     --version "$chart_version"
     --namespace "$NS_OSMO_CONTROL_PLANE"
+    --rollback-on-failure
     --timeout "$TIMEOUT_DEPLOY"
     --force-conflicts
     -f "$service_values"
@@ -436,7 +440,7 @@ if [[ -n "$service_url" ]]; then
         && osmo profile set pool "default" >/dev/null 2>&1; then
         info "OSMO login and profile configured"
     else
-        warn "OSMO login failed — gateway may not be reachable from this host. Configure VPN for CLI access."
+        warn "OSMO login failed — gateway may not be reachable from this host. Configure VPN for CLI access (or, in a devcontainer/codespace, port-forward the gateway: kubectl port-forward svc/osmo-gateway 9000:80 -n $NS_OSMO_CONTROL_PLANE)."
     fi
 fi
 

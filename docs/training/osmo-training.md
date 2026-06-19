@@ -3,7 +3,7 @@ sidebar_position: 7
 title: OSMO Training Workflows
 description: Submit Isaac Lab training jobs to NVIDIA OSMO on Azure Kubernetes Service
 author: Microsoft Robotics-AI Team
-ms.date: 2026-06-10
+ms.date: 2026-06-19
 ms.topic: how-to
 keywords:
   - osmo
@@ -93,6 +93,17 @@ Dataset folder injection via OSMO bucket system instead of base64-encoded archiv
   --dataset-name my-training-code
 ```
 
+## 🛌 Scale-from-zero GPU Pools
+
+OSMO schedules GPU workflows onto AKS Spot pools that default to `min_count = 0`, so idle GPU capacity is released and only billed while a job runs. A workflow requesting GPU resources triggers the pool to scale up from zero, runs to completion, and the pool scales back down once idle. (For the AzureML equivalent, see [AzureML Scale-from-zero GPU Pools](azureml-training.md#-scale-from-zero-gpu-pools).)
+
+Two pieces of platform configuration in [`infrastructure/setup/values/osmo-platforms.yaml`](../../infrastructure/setup/values/osmo-platforms.yaml) make this work:
+
+- **`gpu_platform`** — the platform a workflow selects via `resources.default.platform` (see [`training/il/workflows/osmo/lerobot-train.yaml`](../../training/il/workflows/osmo/lerobot-train.yaml)). It binds the `gpu_tpl` pod template, which pins the GPU SKU `nodeSelector`, the Spot `scalesetpriority` toleration, and the `nvidia.com/gpu` resource request. Those constraints are what let the cluster autoscaler match a pending pod to the zero-scaled Spot pool and bring a node online.
+- **`gpu_gpu_required`** — a resource validation that asserts `USER_GPU >= 1`. It rejects a GPU-platform workflow submitted with zero GPUs at submit time, before a node is provisioned, so a misconfigured job fails fast instead of pinning a freshly-scaled GPU node doing no GPU work.
+
+KAI Scheduler gang-schedules multi-GPU workflows: all of a job's pods wait until the requested GPU count is simultaneously available, so a partially-scaled pool never starts a job that cannot complete. To add or resize a GPU pool, edit `osmo-platforms.yaml` and rerun `infrastructure/setup/03-deploy-osmo.sh` (see [Manage Node Pools](../infrastructure/manage-node-pools.md)).
+
 ## 🔧 Environment Variables
 
 | Variable                 | Description                               |
@@ -124,9 +135,9 @@ osmo version
 
 ### Via Port-Forward (Public Cluster without VPN)
 
-| Service      | Port-Forward Command                                                  | Local URL               |
-|--------------|-----------------------------------------------------------------------|-------------------------|
-| Gateway      | `kubectl port-forward svc/osmo-gateway 9000:80 -n osmo-control-plane` | `http://localhost:9000` |
+| Service | Port-Forward Command                                                  | Local URL               |
+|---------|-----------------------------------------------------------------------|-------------------------|
+| Gateway | `kubectl port-forward svc/osmo-gateway 9000:80 -n osmo-control-plane` | `http://localhost:9000` |
 
 ```bash
 # Start port-forward in background
@@ -145,9 +156,9 @@ osmo version
 
 Access the OSMO UI dashboard:
 
-| Access Method | URL                                                                                              |
-|---------------|--------------------------------------------------------------------------------------------------|
-| VPN           | `http://10.0.5.7`                                                                                |
+| Access Method | URL                                                                                                   |
+|---------------|-------------------------------------------------------------------------------------------------------|
+| VPN           | `http://10.0.5.7`                                                                                     |
 | Port-forward  | `http://localhost:8080` (after `kubectl port-forward svc/osmo-gateway 8080:80 -n osmo-control-plane`) |
 
 ## 🚀 Quick Start
