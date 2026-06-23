@@ -26,13 +26,13 @@ Eight regressions/test-integrity gaps were reconstructed from the repo's own his
 
 | Incident | Today | P0 group | P1 smoke | P2 auto | P3 GPU |
 | --- | :---: | :---: | :---: | :---: | :---: |
-| **#809** — RL lock resolved for Py 3.12 vs the 3.11 runtime → 4 cascading ABI failures | ✗ | – | ✓ | – | – |
-| **#790** — LeRobot needs Py ≥ 3.12 vs an OSMO 3.11 runtime | ✗ | – | ∼ | – | – |
-| **#958** — torch 2.10→2.11 bump pulled CUDA 13 bindings → libcudart break (live desync today) | ✗ | ∼ | ∼ | – | ✓ |
-| **#691 / #547** — path-filter bugs silently disabled fuzz / data-pipeline / training tests for weeks | ✗ | – | ✓ | – | – |
+| **[#809](https://github.com/microsoft/physical-ai-toolchain/issues/809)** — RL lock resolved for Py 3.12 vs the 3.11 runtime → 4 cascading ABI failures | ✗ | – | ✓ | – | – |
+| **[#790](https://github.com/microsoft/physical-ai-toolchain/issues/790)** — LeRobot needs Py ≥ 3.12 vs an OSMO 3.11 runtime | ✗ | – | ∼ | – | – |
+| **[#958](https://github.com/microsoft/physical-ai-toolchain/issues/958)** — torch 2.10→2.11 bump pulled CUDA 13 bindings → libcudart break (live desync today) | ✗ | ∼ | ∼ | – | ✓ |
+| **[#691](https://github.com/microsoft/physical-ai-toolchain/issues/691) / [#547](https://github.com/microsoft/physical-ai-toolchain/issues/547)** — path-filter bugs silently disabled fuzz / data-pipeline / training tests for weeks | ✗ | – | ✓ | – | – |
 | **churn** — starlette 0.52→1.0→1.3 in ~11 days; ~24 dependency PRs/week | ✗ | ✓ | – | ✓ | – |
 
-✓ caught/prevented · ∼ partial (reduces risk) · – n/a · ✗ missed today. **#958 splits**: the dependency-resolution half is caught early (∼); the device-ABI half needs real hardware (Phase 3).
+✓ caught/prevented · ∼ partial (reduces risk) · – n/a · ✗ missed today. **[#958](https://github.com/microsoft/physical-ai-toolchain/issues/958) splits**: the dependency-resolution half is caught early (∼); the device-ABI half needs real hardware (Phase 3).
 
 ## 🪜 The phased plan
 
@@ -47,11 +47,11 @@ Phases 0–2 and the Renovate spike run on ordinary Actions runners (no Azure, ~
 
 ### Phase 1 — GPU-free smoke gate · ~$0 · days
 
-- **Problem.** All test CI is CPU-only `ubuntu-latest`; the interpreter/ABI breaks fail on the real runtime image CI never loads. Path-filter bugs (#691, #547) reported green while testing nothing.
+- **Problem.** All test CI is CPU-only `ubuntu-latest`; the interpreter/ABI breaks fail on the real runtime image CI never loads. Path-filter bugs ([#691](https://github.com/microsoft/physical-ai-toolchain/issues/691), [#547](https://github.com/microsoft/physical-ai-toolchain/issues/547)) reported green while testing nothing.
 - **Two depths.**
   - **Tier 0 (1a)** — venv, seconds, **every PR**: `uv lock --check`, import + `--help`, YAML/schema validate. Cheap. *Caveat:* it installs CPU wheels, so it checks a different graph than the production CUDA one.
-  - **Tier 1 (1b)** — inside the **real runtime image**, minutes, **path-gated**: `docker run` the actual image, reinstall the PR's lock as prod does, import on the real interpreter (Isaac = Python 3.11). Deterministically catches **#809** (and probably **#790**). Bounded by disk, not capability.
-- **Proven.** Run this session inside `nvcr.io/nvidia/isaac-lab:2.3.2` (Python 3.11.13): a dependency requiring `>=3.12` is rejected at install, on CPU — the exact shape of #809.
+  - **Tier 1 (1b)** — inside the **real runtime image**, minutes, **path-gated**: `docker run` the actual image, reinstall the PR's lock as prod does, import on the real interpreter (Isaac = Python 3.11). Deterministically catches **[#809](https://github.com/microsoft/physical-ai-toolchain/issues/809)** (and probably **[#790](https://github.com/microsoft/physical-ai-toolchain/issues/790)**). Bounded by disk, not capability.
+- **Proven.** Run this session inside `nvcr.io/nvidia/isaac-lab:2.3.2` (Python 3.11.13): a dependency requiring `>=3.12` is rejected at install, on CPU — the exact shape of [#809](https://github.com/microsoft/physical-ai-toolchain/issues/809).
 - **Do this.** Add `smoke-cpu.yml` (Tier 0 every PR + Tier 1 path-gated) behind **one fail-safe required check** that can never be silently skipped. Small enabling refactor: move `AppLauncher` into `main()` in `training/rl/scripts/rsl_rl/train.py` (with acceptance criteria) so the module imports on CPU.
 - **Limit (honest).** Catches install/import/interpreter drift. It **cannot** prove CUDA, Vulkan, MIG, or a real training loop — that is Phase 3's job.
 
@@ -64,7 +64,7 @@ Phases 0–2 and the Renovate spike run on ordinary Actions runners (no Azure, ~
 
 ### Phase 3 — Gated GPU end-to-end (the capstone) · funded
 
-- **Problem.** Nothing exercises the GPU runtime, so "safe to merge" can't be asserted. Only real hardware catches CUDA/driver/Vulkan/MIG breaks and #958's device-ABI half.
+- **Problem.** Nothing exercises the GPU runtime, so "safe to merge" can't be asserted. Only real hardware catches CUDA/driver/Vulkan/MIG breaks and [#958](https://github.com/microsoft/physical-ai-toolchain/issues/958)'s device-ABI half.
 - **Precedent.** NeMo gates every GPU job behind a GitHub Environment + queue and mirrors fork PRs to internal branches (no `pull_request_target`).
 - **Do this — two jobs** so untrusted PR code never touches the token-bearing runner: **Job A** on `pull_request` (read-only, no secrets) renders a constrained job spec; **Job B**, after an approving review, checks out the **base** workflow, validates the spec against an allowlist, mints OIDC via an Environment gate, and submits. PR code runs in the GPU pool, not on the runner.
 - **Cost (illustrative; confidence low on exact $).** ~$3–8 GPU-hour × ~0.3–1.0 hr/run; ~5–15 approved runs/week (not per-PR); 60-min timeout, concurrency 1, monthly cap. Scenarios: low ≈ $60/mo · expected ≈ $150/mo · spike ≈ $400/mo. Idle ≈ $0 (scale-from-zero).
