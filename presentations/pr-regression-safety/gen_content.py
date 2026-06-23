@@ -571,17 +571,6 @@ jobs:
 #   sub / aud / repo / environment — fork refs must NOT match it
 """
 
-P_GHAW = """
----
-engine: copilot                 # markdown file -> compiled .lock.yml
-on: { slash_command: { name: aw-dependabot-review } }
-permissions: { contents: read, pull-requests: read }   # agent is READ-ONLY
-safe-outputs:                   # the only way it can act
-  add-comment: { max: 1 }
----
-Review this Dependabot PR and post an advisory comment.
-"""
-
 NEMO_GATE = """
 # NeMo gates the expensive GPU run behind a human/queue approval
 cicd-wait-in-queue:
@@ -931,12 +920,6 @@ SLIDES = [
      "file": "a GHSA, conceptually", "code": P_GHSA,
      "notes": "A GitHub Security Advisory records a vulnerable package, its patched version, and a severity, usually tied to a CVE. When such a package is in your graph, Dependabot opens a security pull request to the minimum patched version. Because these close known exposure, they are fast-tracked by severity, never batched. That separate fast lane recurs throughout the recommendations."},
 
-    {"kind": "primer", "accent": PURPLE, "title": "Primer \u2014 agentic workflows (gh-aw)",
-     "body": "gh-aw workflows are markdown that compiles to a normal Actions workflow (`.lock.yml`). The frontmatter picks an AI `engine`, a trigger, and read-only `tools`. The agent CANNOT write directly \u2014 only through declared `safe-outputs` (add-comment, create-issue\u2026). That read-only-plus-safe-outputs model is the whole safety story.",
-     "terms": "gh-aw, engine, trigger, safe-outputs, lock file, read-only agent",
-     "file": ".github/workflows/*.md", "code": P_GHAW,
-     "notes": "Agentic workflows are a markdown file that compiles into a normal Actions workflow. The frontmatter picks an engine, a trigger, and read-only tools. The agent cannot write anything directly; it acts only through declared safe-outputs, like adding a comment or creating an issue. That model is why the repository's existing read-only reviewer can be trusted to post an advisory comment on a dependency pull request."},
-
     {"kind": "primer", "accent": GREEN, "title": "Primer \u2014 CI gating tiers",
      "body": "Cheap checks (lint, spell, lock-consistency) run on every PR; expensive checks run only when their area changed or a human releases them. This repo computes path booleans in one `changes` job and aggregates into ONE stable required check. The trap: a naive top-level `paths:` filter can leave a required check skipped \u2014 green having tested nothing.",
      "terms": "cheap vs expensive, path gate, required check, branch protection, aggregator",
@@ -967,7 +950,6 @@ SLIDES = [
          ("Vulkan", "graphics API Isaac Sim needs to render"),
          ("ABI", "compiled binary contract; mismatch crashes at runtime"),
          ("submit-and-poll", "CI submits a job to a GPU pool, then waits"),
-         ("safe-outputs", "the only channel a gh-aw agent may write through"),
          ("smoke test", "tiny fast check that the critical path works"),
      ],
      "notes": "A glossary to leave up for reference \u2014 the terms used through the talk, each in a line. Not read aloud."},

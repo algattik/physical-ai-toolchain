@@ -1,6 +1,6 @@
 # PR Regression Safety — Narration Script
 
-51 slides. Generated from `gen_content.py`.
+50 slides. Generated from `gen_content.py`.
 
 ## Slide 01 — PR Regression Safety
 
@@ -146,62 +146,58 @@ The manifest lists direct dependencies and the required Python version; the lock
 
 A GitHub Security Advisory records a vulnerable package, its patched version, and a severity, usually tied to a CVE. When such a package is in your graph, Dependabot opens a security pull request to the minimum patched version. Because these close known exposure, they are fast-tracked by severity, never batched. That separate fast lane recurs throughout the recommendations.
 
-## Slide 37 — Primer — agentic workflows (gh-aw)
-
-Agentic workflows are a markdown file that compiles into a normal Actions workflow. The frontmatter picks an engine, a trigger, and read-only tools. The agent cannot write anything directly; it acts only through declared safe-outputs, like adding a comment or creating an issue. That model is why the repository's existing read-only reviewer can be trusted to post an advisory comment on a dependency pull request.
-
-## Slide 38 — Primer — CI gating tiers
+## Slide 37 — Primer — CI gating tiers
 
 Good CI is tiered: cheap checks on every pull request, expensive checks only when their area changed. This repo computes path booleans in one job and aggregates into a single required check. The trap, which bit this repo twice, is a naive paths filter that leaves a required check skipped, so a pull request looks green having tested nothing. The aggregator must be fail-safe.
 
-## Slide 39 — Primer — running untrusted PR code
+## Slide 38 — Primer — running untrusted PR code
 
 A fork pull request is untrusted code. On the plain event it gets a read-only token and no secrets, so building it is safe. On the base-context event it has secrets, and running the contributor's head there is the classic pwn request. So gate genuine cloud access behind an Environment, and remember that the OIDC token is only as safe as the federated policy that pins which repo and environment may mint it.
 
-## Slide 40 — Glossary
+## Slide 39 — Glossary
 
 A glossary to leave up for reference — the terms used through the talk, each in a line. Not read aloud.
 
-## Slide 41 — These are production contracts, not toy configs
+## Slide 40 — These are production contracts, not toy configs
 
 Two surfaces can break, not one. This is the AzureML job contract for an Isaac training container — the runtime wrapper, the mandatory EULA, the checkpoint behavior. A dependency bump can break the container's runtime packaging, caught by import smoke, or the submission contract that renders this YAML, caught by config-preview, or on-device execution, caught only by the GPU tier. Different tests catch each; that is why the gate is layered.
 
-## Slide 42 — Tier 1 — one image per job, disk-gated
+## Slide 41 — Tier 1 — one image per job, disk-gated
 
 Tier one's honest constraint is disk. Isaac unpacks to around twenty gigabytes, the PyTorch image another fifteen, the eval image seven to nine — they cannot co-reside even after a free-disk step. So it is one image per matrix job, pruned between legs, path-gated to the environment whose dependencies actually moved. The secondary cost, pull time, a nightly cache warm-up absorbs.
 
-## Slide 43 — A small refactor widens the Isaac smoke
+## Slide 42 — A small refactor widens the Isaac smoke
 
 One small repository change deepens the Isaac smoke. Today the RSL launcher builds the Isaac AppLauncher at module top level, so the file cannot be imported or show help without a GPU. Moving that call into a main function, as the SKRL script already does, makes the module importable on a CPU agent. It is small, but it is not zero: it needs acceptance criteria — imports on CPU, help exits before the launcher, argument order preserved, GPU behavior unchanged, and a test to hold all of that.
 
-## Slide 44 — Phase 2 detail — reviewer waits for green CI
+## Slide 43 — Phase 2 detail — reviewer waits for green CI
 
 The reviewer-cost fix in detail. Today a slash command can run before CI and re-comments on every rebase. Proposed: trigger on workflow-run when the pipeline completes, skip when checks are failing so no tokens go to a doomed pull request, and hide older comments for one updating thread. Keep the slash command as a manual override.
 
-## Slide 45 — Smoke operating cost and the fail-safe gate
+## Slide 44 — Smoke operating cost and the fail-safe gate
 
 A new gate has running costs, so own them explicitly. The smoke tier's runtime is minutes; its known flakes are image-pull timeouts and free-disk fragility, triaged by a re-run and a cache; an owner watches schema drift as images change. And the fail-safe pattern is the heart of it: the required summary always runs, never reports skipped, and a wrongly-skipped heavy leg fails the check rather than passing silently — which is exactly what bit this repo in six-ninety-one and five-forty-seven.
 
-## Slide 46 — Anticipated objections
+## Slide 45 — Anticipated objections
 
 The objections a skeptical maintainer will raise, answered. Auto-merge is safe because it is scoped to patches in non-runtime areas with an instant revert. Pinning Python is necessary but not sufficient — it does not exercise a real image install or device execution. Replacing Dependabot now is premature when grouping is native and Renovate is a minority tool here. GPU on every pull request is too costly and unsafe for forks. And the prototype, run under emulation, is enough to prove the interpreter class, though a native runner would harden the final confidence.
 
-## Slide 47 — Economics — the toil being priced out
+## Slide 46 — Economics — the toil being priced out
 
 The case for the cheap phases is also economic. Two dependency pull requests a day, most trivial, each costing reviewer minutes. Batching and patch auto-merge take most of that queue away. Set against the status quo — eight runtime incidents over the window, each taking hours to diagnose — the configuration phases pay for themselves immediately, before any GPU spend.
 
-## Slide 48 — Renovate — adoption across Microsoft OSS
+## Slide 47 — Renovate — adoption across Microsoft OSS
 
 Because adoption determines approval friction, we measured it. Dependabot is the de-facto standard across Microsoft open source. Renovate appears in roughly nineteen org repositories, mostly one Visual Studio team sharing a preset; one in Azure, about nine in dotnet, zero in the GitHub org, and the open-source program page names only GitHub-native features. So the hosted app is a minority, team-scoped path — but the self-hosted Action sidesteps the approval entirely.
 
-## Slide 49 — Renovate — the scoped spike config
+## Slide 48 — Renovate — the scoped spike config
 
 If the spike runs, this is its shape: one config across ecosystems, a stability window, auto-merge for minor and patch, and the torch pin preserved. Run through the Action, not the app, so there is no approval barrier. Auto-detection handles our ecosystems; only the custom pins and groups need translating, a few hours of work. Then decide on the merits — does it cut pull-request volume without losing the security lane.
 
-## Slide 50 — Alternatives considered and rejected
+## Slide 49 — Alternatives considered and rejected
 
 For honesty, the paths rejected and why. A custom bot reinvents grouping that is now native. Migrating straight to the Renovate app carries approval friction for a minority tool. Giving forks credentials through the base-context trigger is the pwn request. Running GPU on every pull request, or letting a runner execute contributor code, is too costly and risky unfunded. And pinning Python everywhere helps but does not exercise a real image install or device execution. Each shares one flaw: it buys control by adding risk or upkeep.
 
-## Slide 51 — Mandate and method
+## Slide 50 — Mandate and method
 
 Finally, provenance. The maintainers asked to solve the dependency problem at its root and to gate safe merges. The method was six parallel research threads, each writing a cited evidence file, grounded in the repository's own history, configurations, and pull requests, plus the prototype we executed this session inside the real Isaac image. The full research, with citations, lives in the tracking folder.

@@ -18,7 +18,7 @@ The repository's test pipeline runs CPU-only, but the regressions that actually 
 
 > Green CPU CI is blind to the costly regression classes → add risk-aware dependency intake, a GPU-free smoke gate that runs inside the real runtime image, safe automation, and — when funded — a gated GPU end-to-end run. Each phase stands alone; adopt incrementally.
 
-51 slides (32 core + 19 appendix). The structure, claims, and narration reflect a 7-lens critique pass. For the talk's reasoning watch the video; to **act on it**, the plan below is self-contained.
+50 slides (32 core + 18 appendix). The structure, claims, and narration reflect a 7-lens critique pass. For the talk's reasoning watch the video; to **act on it**, the plan below is self-contained.
 
 ## 🔥 The failure map
 
