@@ -510,7 +510,7 @@ P_DEPENDABOT = """
   - dependency-name: torch
     versions: [">=2.11.0"]
   open-pull-requests-limit: 5
-# security updates = a SEPARATE stream
+# security updates = a SEPARATE, automatic stream
 """
 
 P_UVLOCK = """
@@ -865,14 +865,15 @@ SLIDES = [
      "caption": "Illustrative figures \u2014 a budget-capped subscription, not a blank cheque (confidence: low on exact $)",
      "label_w": 3.0, "label_size": 13.5, "desc_size": 13,
      "rows": [
-         ("Per gated run", "~$3\u20138 GPU-hour \u00d7 ~0.3\u20131.0 hr; scale-from-zero, idle \u2248 $0"),
-         ("Frequency", "only on maintainer approval \u2014 ~5\u201315 runs/week, not per-PR"),
-         ("Caps", "60-min timeout/run · concurrency 1 · monthly budget cap"),
-         ("Scenarios", "low \u2248 $60/mo · expected \u2248 $150/mo · spike \u2248 $400/mo"),
-         ("Buys", "the only proof of CUDA / Vulkan / MIG / training-loop safety"),
-         ("Unfunded risk", "GPU-only regressions (e.g. #958 device half) keep merging blind"),
+        ("Per gated run", "~$3\u20138 GPU-hour \u00d7 ~0.3\u20131.0 hr; GPU node scales from zero between runs"),
+        ("Cluster standing", "AKS control plane + system node pool run 24/7 \u2014 can't scale to zero \u2248 $150\u2013250/mo dedicated, or ~$0 marginal if folded onto a cluster we already run"),
+        ("Frequency", "only on maintainer approval \u2014 ~5\u201315 runs/week, not per-PR"),
+        ("Caps", "60-min timeout/run · concurrency 1 · monthly budget cap"),
+        ("Scenarios (all-in)", "low \u2248 $200/mo · expected \u2248 $300/mo · spike \u2248 $550/mo \u2014 GPU compute + standing cluster"),
+        ("Buys", "the only proof of CUDA / Vulkan / MIG / training-loop safety"),
+        ("Unfunded risk", "GPU-only regressions (e.g. #958 device half) keep merging blind"),
      ],
-     "notes": "A capstone needs a number, so here is an honest, capped estimate \u2014 and I label the dollar figures low-confidence. Each gated run is short and the pool idles at near-zero cost; runs happen only on approval, not per pull request, so think five to fifteen a week. With a one-hour timeout, single concurrency, and a monthly cap, the expected spend is on the order of a hundred and fifty dollars a month, a few hundred at peak. What that buys is the only proof of GPU-runtime safety there is. What it costs to skip is that GPU-only regressions keep merging blind."},
+     "notes": "A capstone needs a number, so here is an honest, capped estimate \u2014 and I label the dollar figures low-confidence. Each gated run is short, and the GPU node scales from zero between runs. But the honest catch is that the Kubernetes cluster it submits to cannot scale all the way down: the control plane and a system node pool have to stay up around the clock, a standing cost on the order of a couple hundred dollars a month for a dedicated cluster \u2014 or near-zero marginal if we fold it onto a cluster we already run. Runs happen only on approval, not per pull request, so think five to fifteen a week. With a one-hour timeout, single concurrency, and a monthly cap, the GPU compute itself is on the order of a hundred and fifty dollars a month; add the standing cluster and the all-in expected spend is a few hundred. What that buys is the only proof of GPU-runtime safety there is. What it costs to skip is that GPU-only regressions keep merging blind."},
 
     # ================= CLOSE =================
     {"kind": "section", "part": "The decision", "title": "Roadmap and the ask",
@@ -913,10 +914,10 @@ SLIDES = [
      "notes": "Reference material for questions: the tool primers, the deeper smoke mechanics, the cost model, and the alternatives we weighed."},
 
     {"kind": "primer", "accent": BLUE, "title": "Primer \u2014 Dependabot",
-     "body": "Dependabot runs TWO streams: scheduled VERSION updates and advisory-driven SECURITY updates \u2014 never mix them. `groups:` batches, `ignore:` pins, `open-pull-requests-limit` caps noise, `cooldown` adds a stability window. It regenerates lockfiles natively.",
+     "body": "Dependabot has TWO independent update streams: scheduled VERSION updates (configured in `dependabot.yml`) and always-on, advisory-driven SECURITY updates (automatic \u2014 no config needed). Security PRs are never batched behind version updates. `groups:` batches, `ignore:` pins, `open-pull-requests-limit` caps noise, `cooldown` adds a stability window. It regenerates lockfiles natively.",
      "terms": "version vs security, group, ignore, cooldown, PR limit, lockfile",
      "file": ".github/dependabot.yml", "code": P_DEPENDABOT,
-     "notes": "Dependabot runs two separate streams: version updates that keep packages current, and security updates triggered by advisories, which must never be batched behind the version stream. Groups batch, ignore records deliberate pins, the limit caps noise, and a cooldown adds a stability window. It regenerates lockfiles natively."},
+     "notes": "Dependabot has two independent update streams. Version updates keep packages current and are configured in dependabot.yml. Security updates are always on and automatic, triggered by advisories against your dependency graph, needing no configuration, and are never batched behind the version stream. Groups batch, ignore records deliberate pins, the limit caps noise, and a cooldown adds a stability window. It regenerates lockfiles natively."},
 
     {"kind": "primer", "accent": BLUE, "title": "Primer \u2014 uv and lockfiles",
      "body": "`pyproject.toml` is the human-authored manifest (PEP 621). `uv.lock` is the resolver's exact output \u2014 pinned versions, hashes, platform markers. A PR can edit the manifest but forget the lock, so this repo enforces `uv lock --check` as a CI gate.",

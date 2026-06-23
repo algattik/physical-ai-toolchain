@@ -473,18 +473,20 @@ slides:
   desc_size: 13
   rows:
   - - Per gated run
-    - ~$3–8 GPU-hour × ~0.3–1.0 hr; scale-from-zero, idle ≈ $0
+    - ~$3–8 GPU-hour × ~0.3–1.0 hr; GPU node scales from zero between runs
+  - - Cluster standing
+    - AKS control plane + system node pool run 24/7 — can't scale to zero ≈ $150–250/mo dedicated, or ~$0 marginal if folded onto a cluster we already run
   - - Frequency
     - only on maintainer approval — ~5–15 runs/week, not per-PR
   - - Caps
     - 60-min timeout/run · concurrency 1 · monthly budget cap
-  - - Scenarios
-    - low ≈ $60/mo · expected ≈ $150/mo · spike ≈ $400/mo
+  - - Scenarios (all-in)
+    - low ≈ $200/mo · expected ≈ $300/mo · spike ≈ $550/mo — GPU compute + standing cluster
   - - Buys
     - the only proof of CUDA / Vulkan / MIG / training-loop safety
   - - Unfunded risk
     - 'GPU-only regressions (e.g. #958 device half) keep merging blind'
-  notes: A capstone needs a number, so here is an honest, capped estimate — and I label the dollar figures low-confidence. Each gated run is short and the pool idles at near-zero cost; runs happen only on approval, not per pull request, so think five to fifteen a week. With a one-hour timeout, single concurrency, and a monthly cap, the expected spend is on the order of a hundred and fifty dollars a month, a few hundred at peak. What that buys is the only proof of GPU-runtime safety there is. What it costs to skip is that GPU-only regressions keep merging blind.
+  notes: 'A capstone needs a number, so here is an honest, capped estimate — and I label the dollar figures low-confidence. Each gated run is short, and the GPU node scales from zero between runs. But the honest catch is that the Kubernetes cluster it submits to cannot scale all the way down: the control plane and a system node pool have to stay up around the clock, a standing cost on the order of a couple hundred dollars a month for a dedicated cluster — or near-zero marginal if we fold it onto a cluster we already run. Runs happen only on approval, not per pull request, so think five to fifteen a week. With a one-hour timeout, single concurrency, and a monthly cap, the GPU compute itself is on the order of a hundred and fifty dollars a month; add the standing cluster and the all-in expected spend is a few hundred. What that buys is the only proof of GPU-runtime safety there is. What it costs to skip is that GPU-only regressions keep merging blind.'
 - id: roadmap-and-the-ask
   kind: section
   part: The decision
@@ -556,7 +558,7 @@ slides:
   kind: primer
   accent: '#0078D4'
   title: Primer — Dependabot
-  body: 'Dependabot runs TWO streams: scheduled VERSION updates and advisory-driven SECURITY updates — never mix them. `groups:` batches, `ignore:` pins, `open-pull-requests-limit` caps noise, `cooldown` adds a stability window. It regenerates lockfiles natively.'
+  body: 'Dependabot has TWO independent update streams: scheduled VERSION updates (configured in `dependabot.yml`) and always-on, advisory-driven SECURITY updates (automatic — no config needed). Security PRs are never batched behind version updates. `groups:` batches, `ignore:` pins, `open-pull-requests-limit` caps noise, `cooldown` adds a stability window. It regenerates lockfiles natively.'
   terms: version vs security, group, ignore, cooldown, PR limit, lockfile
   file: .github/dependabot.yml
   code: |2
@@ -570,8 +572,8 @@ slides:
       - dependency-name: torch
         versions: [">=2.11.0"]
       open-pull-requests-limit: 5
-    # security updates = a SEPARATE stream
-  notes: 'Dependabot runs two separate streams: version updates that keep packages current, and security updates triggered by advisories, which must never be batched behind the version stream. Groups batch, ignore records deliberate pins, the limit caps noise, and a cooldown adds a stability window. It regenerates lockfiles natively.'
+    # security updates = a SEPARATE, automatic stream
+  notes: Dependabot has two independent update streams. Version updates keep packages current and are configured in dependabot.yml. Security updates are always on and automatic, triggered by advisories against your dependency graph, needing no configuration, and are never batched behind the version stream. Groups batch, ignore records deliberate pins, the limit caps noise, and a cooldown adds a stability window. It regenerates lockfiles natively.
 - id: primer-uv-and-lockfiles
   kind: primer
   accent: '#0078D4'
