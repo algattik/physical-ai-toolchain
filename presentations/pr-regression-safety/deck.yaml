@@ -7,7 +7,7 @@ slides:
   title: PR Regression Safety
   subtitle: Why green CI is not “safe to merge” — and the phased gate that fixes it
   sub2: Research findings · microsoft/physical-ai-toolchain · June 2026
-  notes: This repository has a dependency-regression problem its green pipeline cannot see. The remedy is not one large platform bet; it is four cheap controls that ship now and one funded gate that waits on a budget number. The next slide is the whole case in one statistic.
+  notes: This repository has a dependency-regression problem its green pipeline cannot see. Four of the five controls ship now without new spend; only the GPU end-to-end gate waits on a budget number. The next slide is the whole case in one statistic.
 - id: green-ci-has-missed-every-costly-regression
   kind: stat
   accent: '#C4314B'
@@ -293,20 +293,20 @@ slides:
   left_head: Tier 0 — venv, seconds, every PR
   left_accent: '#107C10'
   left_body: |-
-    - `uv lock --check` — resolution drift
-    - import in a CPU venv + `--help`
-    - YAML schema-validate, `shellcheck`
-    - Cheap; runs on EVERY PR
+    - `uv lock --check` — resolution drift *(today)*
+    - YAML schema-validate, `shellcheck` *(today)*
+    - import in a CPU venv + `--help` *(add)*
+    - Mostly already on — one probe to add
     - Caveat: CPU wheels ≠ the production CUDA graph
   right_head: Tier 1 — inside the real image, minutes
   right_accent: '#0078D4'
   right_body: |-
-    - `docker run` the ACTUAL runtime image
+    - `docker run` the ACTUAL runtime image *(add)*
     - reinstall the PR's lock as prod does
     - import on the real interpreter (Isaac = 3.11)
     - Catches #809, probably #790 — deterministically
     - Path-gated; bounded by disk, not capability
-  notes: 'CPU smoke has two depths, and naming them prevents a costly confusion. Tier zero runs in a plain virtual environment in seconds — lock-check, import, schema-validate — cheap enough for every pull request. But it deliberately installs CPU wheels, so it is checking a different dependency graph than production''s CUDA one; it catches import and resolution errors, not production resolution. Tier one is the one that mirrors production: it pulls the real image and reinstalls the pull request''s lock exactly as the training job does, on the real interpreter. That tier deterministically catches the interpreter class, eight-oh-nine and probably seven-ninety. Its limit is disk, not capability.'
+  notes: 'CPU smoke has two depths, and conflating them is how a green check misleads. Tier zero already runs on every pull request — the lock-check, the YAML and schema validation, shellcheck are all in the pipeline today. What is missing from it is one cheap probe: import the changed code in a CPU virtual environment and run its `--help`. That is the only new line in Tier zero. But state Tier zero''s limit plainly: it installs CPU wheels, so it is checking a different dependency graph than production''s CUDA one; it catches import and resolution errors, not the production resolution. Tier one is the genuinely new tier, and the one that mirrors production: it pulls the real image and reinstalls the pull request''s lock exactly as the training job does, on the real interpreter. That tier deterministically catches the interpreter class, eight-oh-nine and probably seven-ninety. Its limit is disk, not capability.'
 - id: tier-1-import-inside-the-real-image
   kind: code
   accent: '#107C10'

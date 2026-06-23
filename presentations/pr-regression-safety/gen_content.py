@@ -648,7 +648,7 @@ SLIDES = [
     {"kind": "title", "title": "PR Regression Safety",
      "subtitle": "Why green CI is not \u201csafe to merge\u201d \u2014 and the phased gate that fixes it",
      "sub2": "Research findings · microsoft/physical-ai-toolchain · June 2026",
-     "notes": "This repository has a dependency-regression problem its green pipeline cannot see. The remedy is not one large platform bet; it is four cheap controls that ship now and one funded gate that waits on a budget number. The next slide is the whole case in one statistic."},
+     "notes": "This repository has a dependency-regression problem its green pipeline cannot see. Four of the five controls ship now without new spend; only the GPU end-to-end gate waits on a budget number. The next slide is the whole case in one statistic."},
 
     {"kind": "stat", "accent": RED, "title": "Green CI has missed every costly regression",
      "stat": "8  vs  0",
@@ -764,10 +764,10 @@ SLIDES = [
 
     {"kind": "twocol", "accent": BLUE, "title": "Two depths: Tier 0 and Tier 1",
      "left_head": "Tier 0 \u2014 venv, seconds, every PR", "left_accent": GREEN,
-     "left_body": "- `uv lock --check` \u2014 resolution drift\n- import in a CPU venv + `--help`\n- YAML schema-validate, `shellcheck`\n- Cheap; runs on EVERY PR\n- Caveat: CPU wheels \u2260 the production CUDA graph",
+     "left_body": "- `uv lock --check` \u2014 resolution drift *(today)*\n- YAML schema-validate, `shellcheck` *(today)*\n- import in a CPU venv + `--help` *(add)*\n- Mostly already on \u2014 one probe to add\n- Caveat: CPU wheels \u2260 the production CUDA graph",
      "right_head": "Tier 1 \u2014 inside the real image, minutes", "right_accent": BLUE,
-     "right_body": "- `docker run` the ACTUAL runtime image\n- reinstall the PR's lock as prod does\n- import on the real interpreter (Isaac = 3.11)\n- Catches #809, probably #790 \u2014 deterministically\n- Path-gated; bounded by disk, not capability",
-     "notes": "CPU smoke has two depths, and naming them prevents a costly confusion. Tier zero runs in a plain virtual environment in seconds \u2014 lock-check, import, schema-validate \u2014 cheap enough for every pull request. But it deliberately installs CPU wheels, so it is checking a different dependency graph than production's CUDA one; it catches import and resolution errors, not production resolution. Tier one is the one that mirrors production: it pulls the real image and reinstalls the pull request's lock exactly as the training job does, on the real interpreter. That tier deterministically catches the interpreter class, eight-oh-nine and probably seven-ninety. Its limit is disk, not capability."},
+     "right_body": "- `docker run` the ACTUAL runtime image *(add)*\n- reinstall the PR's lock as prod does\n- import on the real interpreter (Isaac = 3.11)\n- Catches #809, probably #790 \u2014 deterministically\n- Path-gated; bounded by disk, not capability",
+     "notes": "CPU smoke has two depths, and conflating them is how a green check misleads. Tier zero already runs on every pull request \u2014 the lock-check, the YAML and schema validation, shellcheck are all in the pipeline today. What is missing from it is one cheap probe: import the changed code in a CPU virtual environment and run its `--help`. That is the only new line in Tier zero. But state Tier zero's limit plainly: it installs CPU wheels, so it is checking a different dependency graph than production's CUDA one; it catches import and resolution errors, not the production resolution. Tier one is the genuinely new tier, and the one that mirrors production: it pulls the real image and reinstalls the pull request's lock exactly as the training job does, on the real interpreter. That tier deterministically catches the interpreter class, eight-oh-nine and probably seven-ninety. Its limit is disk, not capability."},
 
     {"kind": "code", "accent": GREEN, "title": "Tier 1 \u2014 import inside the real image",
      "caption": "The recipe that catches the #809 class \u2014 no GPU; it fails at import",

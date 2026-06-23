@@ -4,7 +4,7 @@
 
 ## Slide 01 — PR Regression Safety
 
-This repository has a dependency-regression problem its green pipeline cannot see. The remedy is not one large platform bet; it is four cheap controls that ship now and one funded gate that waits on a budget number. The next slide is the whole case in one statistic.
+This repository has a dependency-regression problem its green pipeline cannot see. Four of the five controls ship now without new spend; only the GPU end-to-end gate waits on a budget number. The next slide is the whole case in one statistic.
 
 ## Slide 02 — Green CI has missed every costly regression
 
@@ -68,7 +68,7 @@ The pipeline's blind spot is structural. It runs on a generic Ubuntu image with 
 
 ## Slide 17 — Two depths: Tier 0 and Tier 1
 
-CPU smoke has two depths, and naming them prevents a costly confusion. Tier zero runs in a plain virtual environment in seconds — lock-check, import, schema-validate — cheap enough for every pull request. But it deliberately installs CPU wheels, so it is checking a different dependency graph than production's CUDA one; it catches import and resolution errors, not production resolution. Tier one is the one that mirrors production: it pulls the real image and reinstalls the pull request's lock exactly as the training job does, on the real interpreter. That tier deterministically catches the interpreter class, eight-oh-nine and probably seven-ninety. Its limit is disk, not capability.
+CPU smoke has two depths, and conflating them is how a green check misleads. Tier zero already runs on every pull request — the lock-check, the YAML and schema validation, shellcheck are all in the pipeline today. What is missing from it is one cheap probe: import the changed code in a CPU virtual environment and run its `--help`. That is the only new line in Tier zero. But state Tier zero's limit plainly: it installs CPU wheels, so it is checking a different dependency graph than production's CUDA one; it catches import and resolution errors, not the production resolution. Tier one is the genuinely new tier, and the one that mirrors production: it pulls the real image and reinstalls the pull request's lock exactly as the training job does, on the real interpreter. That tier deterministically catches the interpreter class, eight-oh-nine and probably seven-ninety. Its limit is disk, not capability.
 
 ## Slide 18 — Tier 1 — import inside the real image
 
