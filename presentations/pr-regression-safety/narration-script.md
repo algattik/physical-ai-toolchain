@@ -4,7 +4,7 @@
 
 ## Slide 01 — PR Regression Safety
 
-This repository has a dependency-regression problem its green pipeline cannot see. Four of the five controls ship now without new spend; only the GPU end-to-end gate waits on a budget number. The next slide is the whole case in one statistic.
+This repository has a dependency-regression problem its green pipeline cannot see. The remedy is not one large up-front investment; it is a set of cheap controls that ship now without new spend, plus a single GPU end-to-end gate that waits on a budget number. The next slide is the whole case in one statistic.
 
 ## Slide 02 — Green CI has missed every costly regression
 

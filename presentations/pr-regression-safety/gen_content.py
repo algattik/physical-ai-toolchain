@@ -648,7 +648,7 @@ SLIDES = [
     {"kind": "title", "title": "PR Regression Safety",
      "subtitle": "Why green CI is not \u201csafe to merge\u201d \u2014 and the phased gate that fixes it",
      "sub2": "Research findings · microsoft/physical-ai-toolchain · June 2026",
-     "notes": "This repository has a dependency-regression problem its green pipeline cannot see. Four of the five controls ship now without new spend; only the GPU end-to-end gate waits on a budget number. The next slide is the whole case in one statistic."},
+     "notes": "This repository has a dependency-regression problem its green pipeline cannot see. The remedy is not one large up-front investment; it is a set of cheap controls that ship now without new spend, plus a single GPU end-to-end gate that waits on a budget number. The next slide is the whole case in one statistic."},
 
     {"kind": "stat", "accent": RED, "title": "Green CI has missed every costly regression",
      "stat": "8  vs  0",
