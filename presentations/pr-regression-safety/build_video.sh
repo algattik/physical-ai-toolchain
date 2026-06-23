@@ -19,6 +19,15 @@ for n in $(seq 1 "$N"); do
 
   # Synthesize (with timeout) and validate audio; re-synth once if duration is bad.
   # A killed/hung `say` leaves a corrupt aiff (empty duration) -> divide-by-zero below.
+  # Cache is content-addressed: re-synthesize whenever the narration text changed,
+  # not merely when the audio is absent. Slides are keyed by position (slide-NN), so a
+  # reorder that rewrites narration/slide-NN.txt would otherwise reuse stale audio from
+  # whatever slide previously sat at that position.
+  hashfile="${aud%.aiff}.sha"
+  cur_hash=$(shasum -a 256 "$txt" | cut -d' ' -f1)
+  if [ ! -f "$aud" ] || [ ! -f "$hashfile" ] || [ "$(cat "$hashfile")" != "$cur_hash" ]; then
+    rm -f "$aud" "$clip"
+  fi
   for attempt in 1 2; do
     if [ ! -f "$aud" ]; then
       echo ">> slide $n: synthesizing narration (${VOICE:-default system voice})"
@@ -30,6 +39,7 @@ for n in $(seq 1 "$N"); do
     fi
     d=$(ffprobe -v error -show_entries format=duration -of default=nk=1:nw=1 "$aud" 2>/dev/null)
     if [ -n "$d" ] && awk "BEGIN{exit !($d>0)}" 2>/dev/null; then
+      printf '%s' "$cur_hash" > "$hashfile"
       break
     fi
     echo ">> slide $n: bad/empty audio (duration='${d:-none}'), re-synthesizing"
