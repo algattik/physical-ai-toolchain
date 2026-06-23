@@ -31,6 +31,10 @@ W, H = 13.333, 7.5
 ML = 0.92
 CW = W - 2 * ML
 
+# Template slide-number placeholder (TITLE-1 / DIVIDER_* layouts), bottom-right.
+PAGENUM_L, PAGENUM_T, PAGENUM_W, PAGENUM_H = 12.567, 7.079, 0.629, 0.221
+PAGENUM_SIZE = 8
+
 
 def _inline_runs(text, base_font, size, color, bold):
     """Split a line on backtick spans -> rich runs; code spans use MONO font.
@@ -1191,6 +1195,11 @@ def main():
         else:
             layout = "TITLE-1"
         elements = RENDER[kind](s)
+        # Match the template's bottom-right slide number (absent on the cover).
+        if kind != "title":
+            num_clr = WHITE if kind == "section" else TEXT
+            elements.append(tb(PAGENUM_L, PAGENUM_T, PAGENUM_W, PAGENUM_H, str(i),
+                               PAGENUM_SIZE, num_clr, align="right"))
         doc = {"slide": i, "title": s["title"], "layout": layout, "elements": elements,
                "speaker_notes": s["notes"]}
         d = root / f"slide-{i:02d}"
