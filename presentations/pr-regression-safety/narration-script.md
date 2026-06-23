@@ -1,6 +1,6 @@
 # PR Regression Safety — Narration Script
 
-50 slides. Generated from `gen_content.py`.
+49 slides. Generated from `gen_content.py`.
 
 ## Slide 01 — PR Regression Safety
 
@@ -170,34 +170,30 @@ Tier one's honest constraint is disk. Isaac unpacks to around twenty gigabytes, 
 
 One small repository change deepens the Isaac smoke. Today the RSL launcher builds the Isaac AppLauncher at module top level, so the file cannot be imported or show help without a GPU. Moving that call into a main function, as the SKRL script already does, makes the module importable on a CPU agent. It is small, but it is not zero: it needs acceptance criteria — imports on CPU, help exits before the launcher, argument order preserved, GPU behavior unchanged, and a test to hold all of that.
 
-## Slide 43 — Phase 2 detail — reviewer waits for green CI
-
-The reviewer-cost fix in detail. Today a slash command can run before CI and re-comments on every rebase. Proposed: trigger on workflow-run when the pipeline completes, skip when checks are failing so no tokens go to a doomed pull request, and hide older comments for one updating thread. Keep the slash command as a manual override.
-
-## Slide 44 — Smoke operating cost and the fail-safe gate
+## Slide 43 — Smoke operating cost and the fail-safe gate
 
 A new gate has running costs, so own them explicitly. The smoke tier's runtime is minutes; its known flakes are image-pull timeouts and free-disk fragility, triaged by a re-run and a cache; an owner watches schema drift as images change. And the fail-safe pattern is the heart of it: the required summary always runs, never reports skipped, and a wrongly-skipped heavy leg fails the check rather than passing silently — which is exactly what bit this repo in six-ninety-one and five-forty-seven.
 
-## Slide 45 — Anticipated objections
+## Slide 44 — Anticipated objections
 
 The objections a skeptical maintainer will raise, answered. Auto-merge is safe because it is scoped to patches in non-runtime areas with an instant revert. Pinning Python is necessary but not sufficient — it does not exercise a real image install or device execution. Replacing Dependabot now is premature when grouping is native and Renovate is a minority tool here. GPU on every pull request is too costly and unsafe for forks. And the prototype, run under emulation, is enough to prove the interpreter class, though a native runner would harden the final confidence.
 
-## Slide 46 — Economics — the toil being priced out
+## Slide 45 — Economics — the toil being priced out
 
 The case for the cheap phases is also economic. Two dependency pull requests a day, most trivial, each costing reviewer minutes. Batching and patch auto-merge take most of that queue away. Set against the status quo — eight runtime incidents over the window, each taking hours to diagnose — the configuration phases pay for themselves immediately, before any GPU spend.
 
-## Slide 47 — Renovate — adoption across Microsoft OSS
+## Slide 46 — Renovate — adoption across Microsoft OSS
 
 Because adoption determines approval friction, we measured it. Dependabot is the de-facto standard across Microsoft open source. Renovate appears in roughly nineteen org repositories, mostly one Visual Studio team sharing a preset; one in Azure, about nine in dotnet, zero in the GitHub org, and the open-source program page names only GitHub-native features. So the hosted app is a minority, team-scoped path — but the self-hosted Action sidesteps the approval entirely.
 
-## Slide 48 — Renovate — the scoped spike config
+## Slide 47 — Renovate — the scoped spike config
 
 If the spike runs, this is its shape: one config across ecosystems, a stability window, auto-merge for minor and patch, and the torch pin preserved. Run through the Action, not the app, so there is no approval barrier. Auto-detection handles our ecosystems; only the custom pins and groups need translating, a few hours of work. Then decide on the merits — does it cut pull-request volume without losing the security lane.
 
-## Slide 49 — Alternatives considered and rejected
+## Slide 48 — Alternatives considered and rejected
 
 For honesty, the paths rejected and why. A custom bot reinvents grouping that is now native. Migrating straight to the Renovate app carries approval friction for a minority tool. Giving forks credentials through the base-context trigger is the pwn request. Running GPU on every pull request, or letting a runner execute contributor code, is too costly and risky unfunded. And pinning Python everywhere helps but does not exercise a real image install or device execution. Each shares one flaw: it buys control by adding risk or upkeep.
 
-## Slide 50 — Mandate and method
+## Slide 49 — Mandate and method
 
 Finally, provenance. The maintainers asked to solve the dependency problem at its root and to gate safe merges. The method was six parallel research threads, each writing a cited evidence file, grounded in the repository's own history, configurations, and pull requests, plus the prototype we executed this session inside the real Isaac image. The full research, with citations, lives in the tracking folder.

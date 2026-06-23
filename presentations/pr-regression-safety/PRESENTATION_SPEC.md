@@ -12,7 +12,7 @@ Authoritative, persistent record of @algattik's instructions for this narrated d
 - Video: `SPEED=1.8 ./build_video.sh` (TTS via macOS `say`, ffmpeg per-slide clips → concat `presentation.mp4`). Then `open presentation.mp4`.
 - **Audio robustness:** macOS `say` can transiently hang. Pre-synthesize all `audio/slide-NN.aiff` with `timeout 70 say` + retry, and validate each with `ffprobe` duration > 0 (a killed `say` leaves a corrupt aiff that makes `build_video.sh` divide-by-zero). Clear `audio/`+`clips/` when the slide set changes.
 
-## Structure (REQUIRED) — re-cut 2026-06-22 to a decision deck (32 core + ~19 appendix)
+## Structure (REQUIRED) — re-cut 2026-06-22 to a decision deck (32 core + ~17 appendix)
 
 Decision-ladder, not a research readout. Open with stakes, end with the ask; tool-vocabulary primers live in the appendix.
 
@@ -21,7 +21,7 @@ Decision-ladder, not a research readout. Open with stakes, end with the ask; too
 3. **The bridge (1):** **failure map** matrix (incidents × Phase 0/1/2/3) — the callback spine; encodes the #958 split.
 4. **Per PHASE (problem → one precedent → recommendation), tightened:** Phase 0 intake (+Renovate spike as 1 slide) · Phase 1 GPU-free smoke (Tier 0/1a/1b; **ends on its limitation**) · Phase 2 safe automation · Phase 3 gated GPU e2e (+"What funding buys" cost slide).
 5. **Close (3):** roadmap (ship-now vs funded) · **Decision requested today** (specific approvals) · Questions.
-6. **Appendix (~18):** 5 tool primers + glossary · production-contracts · disk-matrix · small-refactor · reviewer-cost detail · smoke operating-cost + fail-safe · anticipated objections (incl. pin-Python) · economics/ROI · Renovate adoption + spike config · alternatives · mandate & method.
+6. **Appendix (~17):** 5 tool primers + glossary · production-contracts · disk-matrix · small-refactor · smoke operating-cost + fail-safe · anticipated objections (incl. pin-Python) · economics/ROI · Renovate adoption + spike config · alternatives · mandate & method.
 
 A color-banded **phased roadmap** slide is mandatory (Phase 0–3 + Spike, cost + timing per row).
 

@@ -366,16 +366,6 @@ jobs:
 # training/il/lerobot/uv.lock pins torch 2.10.0  ->  live desync (#958)
 """
 
-C_GHAW_TODAY = """
-on:
-  slash_command:
-    name: aw-dependabot-review   # a maintainer types it (can run pre-CI)
-permissions:
-  contents: read
-  pull-requests: read            # advisory only - it never writes
-engine: copilot
-"""
-
 C_OTHERS_GROUPING = """
 # vercel/ai - split production vs development (npm)
 groups:
@@ -412,29 +402,6 @@ groups:
 cooldown:
   default-days: 7
 # security: ungrouped
-"""
-
-CMP_REV_LEFT = """
-on:
-  slash_command:
-    name:
-      aw-dependabot-review
-# maintainer-triggered
-# may run before CI
-# re-comments on rebase
-"""
-CMP_REV_RIGHT = """
-on:
-  workflow_run:
-    workflows:
-      ["PR Validation"]
-    types: [completed]
-  skip-if-check-failing:
-    include: ["PR Validation"]
-safe-outputs:
-  add-comment:
-    hide-older-comments:
-      true
 """
 
 C_SMOKE = """
@@ -969,11 +936,6 @@ SLIDES = [
      "file": "training/rl/scripts/rsl_rl/train.py", "code": C_RSL_REFACTOR, "code_size": 12.5,
      "notes": "One small repository change deepens the Isaac smoke. Today the RSL launcher builds the Isaac AppLauncher at module top level, so the file cannot be imported or show help without a GPU. Moving that call into a main function, as the SKRL script already does, makes the module importable on a CPU agent. It is small, but it is not zero: it needs acceptance criteria \u2014 imports on CPU, help exits before the launcher, argument order preserved, GPU behavior unchanged, and a test to hold all of that."},
 
-    {"kind": "codecompare", "accent": GREEN, "title": "Phase 2 detail \u2014 reviewer waits for green CI",
-     "caption": "Run after CI, skip doomed PRs, keep one updating comment",
-     "left_head": "Today \u2014 slash_command", "left_accent": RED, "left_code": CMP_REV_LEFT,
-     "right_head": "Proposed \u2014 workflow_run", "right_accent": GREEN, "right_code": CMP_REV_RIGHT,
-     "notes": "The reviewer-cost fix in detail. Today a slash command can run before CI and re-comments on every rebase. Proposed: trigger on workflow-run when the pipeline completes, skip when checks are failing so no tokens go to a doomed pull request, and hide older comments for one updating thread. Keep the slash command as a manual override."},
 
     {"kind": "code", "accent": GREEN, "title": "Smoke operating cost and the fail-safe gate",
      "caption": "Who owns it, what it costs to run, and why a skip can't pass as green",
