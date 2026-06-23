@@ -756,7 +756,7 @@ SLIDES = [
          ("#790 \u2014 LeRobot interpreter", "LeRobot needs Python \u2265 3.12 against an OSMO 3.11 runtime"),
          ("#958 \u2014 torch / CUDA", "a torch 2.10\u21922.11 security bump pulled CUDA 13 bindings \u2192 libcudart break; live desync today"),
          ("#691 / #547 \u2014 tests off", "path-filter bugs silently disabled fuzz, data-pipeline, and training tests for weeks"),
-         ("churn", "starlette bumped 0.52\u21921.0\u21921.3 in ~11 days \u2014 three churning security PRs"),
+         ("churn", "starlette churned 0.52\u21921.0\u21921.3 across ~7 dependency PRs and a downgrade-then-rebump in ~12 days"),
      ],
      "notes": "These five carry the rest of the talk, so they are worth a name. Eight-oh-nine and seven-ninety are interpreter mismatches: a lock resolved for one Python version against a runtime built on another. Nine-fifty-eight is a torch security bump that dragged in an incompatible CUDA runtime, and it still ships today because the lock pins one version while the pipeline force-installs another. Six-ninety-one and five-forty-seven are the pipeline disabling its own tests. And starlette shows the churn. Hold these five; every later recommendation maps back to them."},
 
@@ -809,7 +809,7 @@ SLIDES = [
          {"label": "#790 LeRobot Py\u22653.12", "sub": "vs OSMO 3.11 runtime", "cells": ["x", "n", "~", "n", "n"]},
          {"label": "#958 torch / CUDA", "sub": "resolution vs device ABI", "cells": ["x", "~", "~", "n", "y"]},
          {"label": "#691/#547 tests off", "sub": "path-filter silently skipped", "cells": ["x", "n", "y", "n", "n"]},
-         {"label": "churn · starlette \u00d73", "sub": "noise / wasted reviews", "cells": ["x", "y", "n", "y", "n"]},
+         {"label": "churn · starlette \u00d77", "sub": "noise / wasted reviews", "cells": ["x", "y", "n", "y", "n"]},
      ],
      "legend": "\u2713 caught/prevented   \u223c partial \u2014 reduces risk   \u2013 n/a   \u2717 missed today.   #958 splits: \u223c resolution caught early; \u2713 the device-ABI break needs Phase 3.",
      "notes": "This is the map the whole plan hangs on. Read each row to the first column that catches it. The interpreter breaks, eight-oh-nine and seven-ninety, are caught by the Phase-one smoke gate, on a CPU. The integrity failures, six-ninety-one and five-forty-seven, are caught by a fail-safe required check, also Phase one. Churn is absorbed by Phase-zero grouping and Phase-two auto-merge. And nine-fifty-eight splits in two: the cheap phases catch the dependency-resolution half early, but the actual device-ABI break can only be proven on a GPU, in Phase three. That split is the honest reason the capstone earns funding."},
@@ -856,9 +856,9 @@ SLIDES = [
 
     {"kind": "twocol", "accent": BLUE, "title": "Two depths: Tier 0 and Tier 1",
      "left_head": "Tier 0 \u2014 venv, seconds, every PR", "left_accent": GREEN,
-     "left_body": "- uv lock --check \u2014 resolution drift\n- import in a CPU venv + --help\n- YAML schema-validate, shellcheck\n- Cheap; runs on EVERY PR\n- Caveat: CPU wheels \u2260 the production CUDA graph",
+     "left_body": "- `uv lock --check` \u2014 resolution drift\n- import in a CPU venv + `--help`\n- YAML schema-validate, `shellcheck`\n- Cheap; runs on EVERY PR\n- Caveat: CPU wheels \u2260 the production CUDA graph",
      "right_head": "Tier 1 \u2014 inside the real image, minutes", "right_accent": BLUE,
-     "right_body": "- docker run the ACTUAL runtime image\n- reinstall the PR's lock as prod does\n- import on the real interpreter (Isaac = 3.11)\n- Catches #809, probably #790 \u2014 deterministically\n- Path-gated; bounded by disk, not capability",
+     "right_body": "- `docker run` the ACTUAL runtime image\n- reinstall the PR's lock as prod does\n- import on the real interpreter (Isaac = 3.11)\n- Catches #809, probably #790 \u2014 deterministically\n- Path-gated; bounded by disk, not capability",
      "notes": "CPU smoke has two depths, and naming them prevents a costly confusion. Tier zero runs in a plain virtual environment in seconds \u2014 lock-check, import, schema-validate \u2014 cheap enough for every pull request. But it deliberately installs CPU wheels, so it is checking a different dependency graph than production's CUDA one; it catches import and resolution errors, not production resolution. Tier one is the one that mirrors production: it pulls the real image and reinstalls the pull request's lock exactly as the training job does, on the real interpreter. That tier deterministically catches the interpreter class, eight-oh-nine and probably seven-ninety. Its limit is disk, not capability."},
 
     {"kind": "code", "accent": GREEN, "title": "Tier 1 \u2014 import inside the real image",
@@ -898,7 +898,7 @@ SLIDES = [
      "notes": "The change keeps the safety model and fixes the economics. Left is today: a slash command, an advisory comment whenever asked. Right is the proposal: the same read-only agent with the same safe-outputs, but fired when the pipeline completes, skipped when checks are failing so no tokens burn on red CI, kept to one updating comment, and for a high-risk bump it opens a single issue assigned to the Copilot coding agent. The decider triages; the coding agent does the work. We would pilot it advisory-only first, comparing its labels to maintainer labels before letting it create issues."},
 
     {"kind": "code", "accent": GREEN, "title": "Recommendation \u2014 auto-merge, scoped tight",
-     "caption": "fetch-metadata + gh pr merge --auto \u2014 patch-only, no runtime/GPU packages, no security",
+     "caption": "`fetch-metadata` + `gh pr merge --auto` \u2014 patch-only, no runtime/GPU packages, no security",
      "file": "Proposed: auto-merge workflow", "code": C_AUTOMERGE,
      "notes": "Auto-merge the trivially safe, and only that. Dependabot's fetch-metadata action reads the update type without running the pull request's code; for a development patch it enables auto-merge, which waits for the required checks. The natural objection \u2014 won't this cause incidents \u2014 is answered by scope: patch-only at first, development and docs and actions only, never a runtime or GPU package, never a security pull request, required checks green, and an instant-revert playbook. Everything riskier escalates to the triage layer."},
 
@@ -960,7 +960,7 @@ SLIDES = [
      "notes": "Everything but Phase three runs on ordinary runners and ships now; Phase three waits on the GPU budget. The order is deliberate: intake first to cut noise, then the smoke gate to catch the interpreter class, then automation to remove toil, and the funded capstone last. The Renovate spike runs in parallel and is reversible. Funding does not gate progress \u2014 only the final proof."},
 
     {"kind": "bullets", "accent": BLUE, "title": "Decision requested today",
-     "body": "- Approve the Phase 0 dependabot.yml change (grouping + cooldown)\n- Approve the Phase 1a Tier-0 required check on every PR\n- Approve a Phase 1b Tier-1 real-image spike with a runtime cap\n- Approve a Phase 2 patch-only auto-merge pilot (dev/docs/actions)\n- Approve a time-boxed Renovate spike via github-action\n- Defer Phase 3 pending a GPU budget number \u2014 design is settled\n- Out of band, now: fix the live torch 2.10 / 2.11 desync",
+     "body": "- Approve the Phase 0 `dependabot.yml` change (grouping + cooldown)\n- Approve the Phase 1a Tier-0 required check on every PR\n- Approve a Phase 1b Tier-1 real-image spike with a runtime cap\n- Approve a Phase 2 patch-only auto-merge pilot (dev/docs/actions)\n- Approve a time-boxed Renovate spike via github-action\n- Defer Phase 3 pending a GPU budget number \u2014 design is settled\n- Out of band, now: fix the live torch 2.10 / 2.11 desync",
      "notes": "So, concretely, seven decisions. Approve the configuration grouping. Approve the Tier-zero required check on every pull request. Approve a capped Tier-one real-image spike. Approve a patch-only auto-merge pilot scoped to development, docs, and actions. Approve a time-boxed Renovate spike through the Action. Defer Phase three until there is a GPU budget number \u2014 its design is settled and waiting. And separately from all of it, fix the live torch desync now; that one is not a decision, it is a bug."},
 
     {"kind": "section", "part": "Discussion", "title": "Questions",
