@@ -52,7 +52,7 @@ $VENV $SK/scripts/render_pdf_images.py --input deck/presentation.pdf --output-di
 SPEED=1.0 ./build_video.sh
 ```
 
-Rebuilding **only the video** (e.g. after a narration tweak) needs steps 1, 3, then 4. Clear `audio/` + `clips/` first when the slide set changes, so narration re-synthesizes.
+Rebuilding **only the video** (e.g. after a narration tweak) needs steps 1, 3, then 4. When the slide set **shrinks**, `rm -rf slides audio clips` first: `gen_content.py` purges its own `content/` and `narration/`, but the PDF renderer overwrites `slides/` without removing orphaned trailing images, and stale `audio/`/`clips/` would otherwise be reused. `build_video.sh` counts narration files, so an orphaned `slides/slide-NNN.jpg` left behind would re-narrate cut content.
 
 ## ✏️ Editing slides
 

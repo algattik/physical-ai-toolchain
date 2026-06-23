@@ -1059,11 +1059,14 @@ def write_combined_yaml(slides, path="deck.yaml"):
 def main():
     root = Path("content")
     (root / "global").mkdir(parents=True, exist_ok=True)
-    Path("narration").mkdir(exist_ok=True)
+    narration_dir = Path("narration")
+    narration_dir.mkdir(exist_ok=True)
     for d in root.glob("slide-*"):
         for p in d.glob("*"):
             p.unlink()
         d.rmdir()
+    for p in narration_dir.glob("slide-*.txt"):
+        p.unlink()
     style = {"dimensions": {"width_inches": W, "height_inches": H, "format": "16:9"},
              "metadata": {"title": "PR Regression Safety — Research Findings",
                           "author": "Task Researcher (Copilot)"},
