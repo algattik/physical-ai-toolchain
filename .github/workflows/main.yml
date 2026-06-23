@@ -480,11 +480,20 @@ jobs:
             package-lock.json
             pyproject.toml
             uv.lock
+            data-pipeline/pyproject.toml
+            data-pipeline/uv.lock
             evaluation/pyproject.toml
             evaluation/uv.lock
+            evaluation/sil/docker/pyproject.toml
+            evaluation/sil/docker/uv.lock
             training/rl/pyproject.toml
+            training/rl/uv.lock
             training/il/lerobot/pyproject.toml
+            training/il/lerobot/uv.lock
+            workflows/osmo/pyproject.toml
+            workflows/osmo/uv.lock
             data-management/viewer/pyproject.toml
+            data-management/viewer/uv.lock
             data-management/viewer/package.json
             data-management/viewer/backend/pyproject.toml
             data-management/viewer/backend/uv.lock
@@ -503,6 +512,7 @@ jobs:
           output-file: dependencies.spdx.json
           artifact-name: ''
           dependency-snapshot: true
+          syft-version: v1.20.0
 
       - name: Upload dependency SBOM artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1

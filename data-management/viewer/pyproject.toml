@@ -70,6 +70,9 @@ testpaths = ["backend/tests"]
 
 [tool.uv]
 constraint-dependencies = [
+    # cryptography: transitive via azure-identity/msal; 48.0.1 patches
+    # GHSA-537c-gmf6-5ccf.
+    "cryptography==48.0.1",
     "pyjwt==2.13.0",
     "pygments==2.20.0",
 ]

@@ -4,12 +4,11 @@ version = "0.1.0"
 description = "LeRobot workflow runtime dependencies"
 requires-python = ">=3.12"
 # Direct dependencies for the AzureML LeRobot training entrypoint. All versions
-# are pinned exactly because requirements.txt is installed with `uv pip install
-# --no-deps` from a compiled lockfile; pip's resolver does NOT run in the
-# container. Regenerate requirements.txt after any change here:
+# are pinned exactly because runtime consumers install with `uv pip install
+# --no-deps` from a build-time export of uv.lock; pip's resolver does NOT run in
+# the container. Regenerate the lock after any change here:
 #   cd training/il/lerobot
-#   uv pip compile pyproject.toml -o requirements.txt --python-version 3.12 \
-#     --python-platform manylinux_2_28_x86_64
+#   uv lock
 dependencies = [
     "numpy==2.4.6",
     "azure-core==1.41.0",
@@ -68,6 +67,17 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.uv]
+# Constrain the universal lock to the AzureML/OSMO deployment target so the
+# resolution yields a single marker per package, suitable for `--no-deps`
+# installs and a deterministic build-time `uv export`.
+environments = ["sys_platform == 'linux' and platform_machine == 'x86_64'"]
+# Required for prerelease transitives pulled by the resolved tree, including
+# Azure/OpenTelemetry instrumentation betas, wrapt release candidates, and
+# safetensors release candidates. `uv lock` reads prerelease from `[tool.uv]`
+# (only `uv pip` reads `[tool.uv.pip]`). After regenerating the lock, audit the
+# full set with:
+#   uv export --frozen --no-hashes --no-emit-project | grep -E '[0-9][ab][0-9]+|rc[0-9]+'
+prerelease = "allow"
 # `override-dependencies` forces uv to ignore upstream upper-bound constraints
 # during resolution. Each entry below must repeat a pinned version that also
 # appears in `dependencies` above, otherwise resolution drifts. Remove an
@@ -106,11 +116,3 @@ override-dependencies = [
     "datasets==5.0.0",
 ]
 package = false
-
-[tool.uv.pip]
-# Required for prerelease transitives pulled by the resolved tree, including
-# Azure/OpenTelemetry instrumentation betas, wrapt release candidates, and
-# safetensors release candidates. After regenerating requirements.txt, audit
-# the full set with:
-#   grep -E '[0-9][ab][0-9]+|rc[0-9]+' requirements.txt
-prerelease = "allow"

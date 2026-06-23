@@ -83,7 +83,7 @@ updates:
     - ">=4.0.0"
   - dependency-name: "torch"
     versions:
-    - ">=2.12.0"
+    - ">=2.11.0"
   - dependency-name: "numpy"
     versions:
     - ">=2.3.0"
@@ -137,15 +137,31 @@ updates:
       patterns:
       - "*"
   ignore:
-  - dependency-name: "torch"
+  - dependency-name: "av"
     versions:
-    - ">=2.12.0"
+    - ">=16.0.0"
   labels:
   - dependencies
   - python
   - evaluation
   open-pull-requests-limit: 5
-  package-ecosystem: pip
+  package-ecosystem: uv
+  schedule:
+    day: monday
+    interval: weekly
+- commit-message:
+    include: scope
+    prefix: chore
+  directory: /workflows/osmo
+  groups:
+    osmo-dependencies:
+      patterns:
+      - "*"
+  labels:
+  - dependencies
+  - python
+  open-pull-requests-limit: 5
+  package-ecosystem: uv
   schedule:
     day: monday
     interval: weekly
