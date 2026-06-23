@@ -1,6 +1,6 @@
 # PR Regression Safety — Narration Script
 
-53 slides. Generated from `gen_content.py`.
+51 slides. Generated from `gen_content.py`.
 
 ## Slide 01 — PR Regression Safety
 
@@ -84,132 +84,124 @@ The recommendation is two named jobs. Phase one-a is Tier zero on every pull req
 
 ## Slide 21 — Safe automation
 
-Phase two removes human toil from the safe path and routes the risky path to an agent, without weakening any gate.
+Phase two removes human toil from the safe path without weakening any gate. It auto-merges only the bumps that are provably trivial, and leaves everything riskier to scoped manual review.
 
 ## Slide 22 — Every low-risk bump waits on a human
 
-The toil is concentrated in the safe path. Dependabot cannot merge its own pull requests, so every trivial patch waits for a maintainer's click, and high-risk and low-risk updates get the same manual handling — roughly twenty-four pull requests a week, most of them trivial. Meanwhile the advisory agent can run before the pipeline finishes, spending tokens on a pull request that is already failing. Both are fixable without touching the safety bar.
+The toil is concentrated in the safe path. Dependabot cannot merge its own pull requests, so every trivial patch waits for a maintainer's click, and high-risk and low-risk updates get the same manual handling — roughly twenty-four pull requests a week, most of them trivial. That is toil, not safety, and it is fixable without touching the safety bar.
 
-## Slide 23 — What others do — NeMo's gated agentic loop
+## Slide 23 — Recommendation — auto-merge, scoped tight
 
-NVIDIA's NeMo runs the exact loop we want, in production. When CI fails, an agent investigates and posts one plan comment — and, in its own prompt, it must not edit or push code; it only proposes. A human approves by replying, and only then does a separate job, which first checks the approver is on the team, push the fix and re-run CI. The agent proposes; a person disposes. That gate is the model for our triage layer.
+Auto-merge the trivially safe, and only that — no agent, no inference. Dependabot's fetch-metadata action reads the update type without running the pull request's code; for a development patch it enables auto-merge, which waits for the required checks. The natural objection — won't this cause incidents — is answered by scope: patch-only at first, development and docs and actions only, never a runtime or GPU package, never a security pull request, required checks green, and an instant-revert playbook. Everything riskier stays in scoped manual review.
 
-## Slide 24 — Recommendation — wire the agent to CI
-
-The change keeps the safety model and fixes the economics. Left is today: a slash command, an advisory comment whenever asked. Right is the proposal: the same read-only agent with the same safe-outputs, but fired when the pipeline completes, skipped when checks are failing so no tokens burn on red CI, kept to one updating comment, and for a high-risk bump it opens a single issue assigned to the Copilot coding agent. The decider triages; the coding agent does the work. We would pilot it advisory-only first, comparing its labels to maintainer labels before letting it create issues.
-
-## Slide 25 — Recommendation — auto-merge, scoped tight
-
-Auto-merge the trivially safe, and only that. Dependabot's fetch-metadata action reads the update type without running the pull request's code; for a development patch it enables auto-merge, which waits for the required checks. The natural objection — won't this cause incidents — is answered by scope: patch-only at first, development and docs and actions only, never a runtime or GPU package, never a security pull request, required checks green, and an instant-revert playbook. Everything riskier escalates to the triage layer.
-
-## Slide 26 — Gated GPU end-to-end — the capstone
+## Slide 24 — Gated GPU end-to-end — the capstone
 
 Phase three is the capstone: the only tier that can assert safe-to-merge on a GPU. Its blocker is a budget number, not a design.
 
-## Slide 27 — The GPU half is never proven
+## Slide 25 — The GPU half is never proven
 
 The cheap phases close the dependency and interpreter classes, but one class remains open. Only real hardware catches CUDA and driver breaks, Isaac's Vulkan rendering, and MIG. Recall the failure map: nine-fifty-eight's resolution half is caught early, but its device-ABI half passes every CPU tier and only fails on the GPU. Proving that half is what Phase three buys, and the only thing standing in the way is a funded, capped GPU subscription.
 
-## Slide 28 — What others do — NeMo gates the GPU run
+## Slide 26 — What others do — NeMo gates the GPU run
 
 NeMo gates the expensive half cleanly. Every GPU job depends on a wait-in-queue job bound to a GitHub Environment, so nothing on a GPU starts until a reviewer or a queue bot approves it. And to run fork code safely, NeMo avoids the dangerous base-context trigger entirely — a bot mirrors fork pull requests onto internal branches, so untrusted code never executes with secrets in scope. Approval gate plus sandboxed execution: that is the shape we copy.
 
-## Slide 29 — Recommendation — the gated GPU job
+## Slide 27 — Recommendation — the gated GPU job
 
 The safety hinge is that contributor code never runs on the runner that holds the cloud token. Job A runs on the plain pull-request event — read-only, no secrets — and only renders a constrained job spec. Job B runs after an approving review, checks out the trusted base workflow rather than the pull request, validates the spec against an allowlist, mints an OIDC token through an Environment gate, and submits. The contributor's code runs inside the GPU pool, never on the privileged runner. That is the difference between a gate and a leak.
 
-## Slide 30 — What funding buys
+## Slide 28 — What funding buys
 
 A capstone needs a number, so here is an honest, capped estimate — and I label the dollar figures low-confidence. Each gated run is short and the pool idles at near-zero cost; runs happen only on approval, not per pull request, so think five to fifteen a week. With a one-hour timeout, single concurrency, and a monthly cap, the expected spend is on the order of a hundred and fifty dollars a month, a few hundred at peak. What that buys is the only proof of GPU-runtime safety there is. What it costs to skip is that GPU-only regressions keep merging blind.
 
-## Slide 31 — Roadmap and the ask
+## Slide 29 — Roadmap and the ask
 
 Bring it together: the sequence, and the specific decisions requested.
 
-## Slide 32 — Roadmap — ship now vs funded
+## Slide 30 — Roadmap — ship now vs funded
 
 Everything but Phase three runs on ordinary runners and ships now; Phase three waits on the GPU budget. The order is deliberate: intake first to cut noise, then the smoke gate to catch the interpreter class, then automation to remove toil, and the funded capstone last. The Renovate spike runs in parallel and is reversible. Funding does not gate progress — only the final proof.
 
-## Slide 33 — Decision requested today
+## Slide 31 — Decision requested today
 
 So, concretely, seven decisions. Approve the configuration grouping. Approve the Tier-zero required check on every pull request. Approve a capped Tier-one real-image spike. Approve a patch-only auto-merge pilot scoped to development, docs, and actions. Approve a time-boxed Renovate spike through the Action. Defer Phase three until there is a GPU budget number — its design is settled and waiting. And separately from all of it, fix the live torch desync now; that one is not a decision, it is a bug.
 
-## Slide 34 — Questions
+## Slide 32 — Questions
 
 That is the case: the regressions are real and runtime-specific, four controls ship now for almost nothing, and the GPU capstone is designed and waiting on a budget number. The appendix has the primers, the prototype detail, the economics, and the rejected alternatives. I will stop there.
 
-## Slide 35 — Reference and backup
+## Slide 33 — Reference and backup
 
 Reference material for questions: the tool primers, the deeper smoke mechanics, the cost model, and the alternatives we weighed.
 
-## Slide 36 — Primer — Dependabot
+## Slide 34 — Primer — Dependabot
 
 Dependabot runs two separate streams: version updates that keep packages current, and security updates triggered by advisories, which must never be batched behind the version stream. Groups batch, ignore records deliberate pins, the limit caps noise, and a cooldown adds a stability window. It regenerates lockfiles natively.
 
-## Slide 37 — Primer — uv and lockfiles
+## Slide 35 — Primer — uv and lockfiles
 
 The manifest lists direct dependencies and the required Python version; the lock is the resolver's exact output, with hashes and markers. The danger is a pull request that edits the manifest but forgets the lock, so CI installs a different graph. A lock-check gate prevents that drift.
 
-## Slide 38 — Primer — security advisories (GHSA)
+## Slide 36 — Primer — security advisories (GHSA)
 
 A GitHub Security Advisory records a vulnerable package, its patched version, and a severity, usually tied to a CVE. When such a package is in your graph, Dependabot opens a security pull request to the minimum patched version. Because these close known exposure, they are fast-tracked by severity, never batched. That separate fast lane recurs throughout the recommendations.
 
-## Slide 39 — Primer — agentic workflows (gh-aw)
+## Slide 37 — Primer — agentic workflows (gh-aw)
 
-Agentic workflows are a markdown file that compiles into a normal Actions workflow. The frontmatter picks an engine, a trigger, and read-only tools. The agent cannot write anything directly; it acts only through declared safe-outputs, like adding a comment or creating an issue. That model is why an agent can be trusted to triage dependency pull requests.
+Agentic workflows are a markdown file that compiles into a normal Actions workflow. The frontmatter picks an engine, a trigger, and read-only tools. The agent cannot write anything directly; it acts only through declared safe-outputs, like adding a comment or creating an issue. That model is why the repository's existing read-only reviewer can be trusted to post an advisory comment on a dependency pull request.
 
-## Slide 40 — Primer — CI gating tiers
+## Slide 38 — Primer — CI gating tiers
 
 Good CI is tiered: cheap checks on every pull request, expensive checks only when their area changed. This repo computes path booleans in one job and aggregates into a single required check. The trap, which bit this repo twice, is a naive paths filter that leaves a required check skipped, so a pull request looks green having tested nothing. The aggregator must be fail-safe.
 
-## Slide 41 — Primer — running untrusted PR code
+## Slide 39 — Primer — running untrusted PR code
 
 A fork pull request is untrusted code. On the plain event it gets a read-only token and no secrets, so building it is safe. On the base-context event it has secrets, and running the contributor's head there is the classic pwn request. So gate genuine cloud access behind an Environment, and remember that the OIDC token is only as safe as the federated policy that pins which repo and environment may mint it.
 
-## Slide 42 — Glossary
+## Slide 40 — Glossary
 
 A glossary to leave up for reference — the terms used through the talk, each in a line. Not read aloud.
 
-## Slide 43 — These are production contracts, not toy configs
+## Slide 41 — These are production contracts, not toy configs
 
 Two surfaces can break, not one. This is the AzureML job contract for an Isaac training container — the runtime wrapper, the mandatory EULA, the checkpoint behavior. A dependency bump can break the container's runtime packaging, caught by import smoke, or the submission contract that renders this YAML, caught by config-preview, or on-device execution, caught only by the GPU tier. Different tests catch each; that is why the gate is layered.
 
-## Slide 44 — Tier 1 — one image per job, disk-gated
+## Slide 42 — Tier 1 — one image per job, disk-gated
 
 Tier one's honest constraint is disk. Isaac unpacks to around twenty gigabytes, the PyTorch image another fifteen, the eval image seven to nine — they cannot co-reside even after a free-disk step. So it is one image per matrix job, pruned between legs, path-gated to the environment whose dependencies actually moved. The secondary cost, pull time, a nightly cache warm-up absorbs.
 
-## Slide 45 — A small refactor widens the Isaac smoke
+## Slide 43 — A small refactor widens the Isaac smoke
 
 One small repository change deepens the Isaac smoke. Today the RSL launcher builds the Isaac AppLauncher at module top level, so the file cannot be imported or show help without a GPU. Moving that call into a main function, as the SKRL script already does, makes the module importable on a CPU agent. It is small, but it is not zero: it needs acceptance criteria — imports on CPU, help exits before the launcher, argument order preserved, GPU behavior unchanged, and a test to hold all of that.
 
-## Slide 46 — Phase 2 detail — reviewer waits for green CI
+## Slide 44 — Phase 2 detail — reviewer waits for green CI
 
 The reviewer-cost fix in detail. Today a slash command can run before CI and re-comments on every rebase. Proposed: trigger on workflow-run when the pipeline completes, skip when checks are failing so no tokens go to a doomed pull request, and hide older comments for one updating thread. Keep the slash command as a manual override.
 
-## Slide 47 — Smoke operating cost and the fail-safe gate
+## Slide 45 — Smoke operating cost and the fail-safe gate
 
 A new gate has running costs, so own them explicitly. The smoke tier's runtime is minutes; its known flakes are image-pull timeouts and free-disk fragility, triaged by a re-run and a cache; an owner watches schema drift as images change. And the fail-safe pattern is the heart of it: the required summary always runs, never reports skipped, and a wrongly-skipped heavy leg fails the check rather than passing silently — which is exactly what bit this repo in six-ninety-one and five-forty-seven.
 
-## Slide 48 — Anticipated objections
+## Slide 46 — Anticipated objections
 
 The objections a skeptical maintainer will raise, answered. Auto-merge is safe because it is scoped to patches in non-runtime areas with an instant revert. Pinning Python is necessary but not sufficient — it does not exercise a real image install or device execution. Replacing Dependabot now is premature when grouping is native and Renovate is a minority tool here. GPU on every pull request is too costly and unsafe for forks. And the prototype, run under emulation, is enough to prove the interpreter class, though a native runner would harden the final confidence.
 
-## Slide 49 — Economics — the toil being priced out
+## Slide 47 — Economics — the toil being priced out
 
-The case for the cheap phases is also economic. Two dependency pull requests a day, most trivial, each costing reviewer minutes and agent tokens, with the agent sometimes spending those tokens on a pull request that will fail anyway. Batching and patch auto-merge take most of that queue away. Set against the status quo — eight runtime incidents over the window, each taking hours to diagnose — the configuration phases pay for themselves immediately, before any GPU spend.
+The case for the cheap phases is also economic. Two dependency pull requests a day, most trivial, each costing reviewer minutes. Batching and patch auto-merge take most of that queue away. Set against the status quo — eight runtime incidents over the window, each taking hours to diagnose — the configuration phases pay for themselves immediately, before any GPU spend.
 
-## Slide 50 — Renovate — adoption across Microsoft OSS
+## Slide 48 — Renovate — adoption across Microsoft OSS
 
 Because adoption determines approval friction, we measured it. Dependabot is the de-facto standard across Microsoft open source. Renovate appears in roughly nineteen org repositories, mostly one Visual Studio team sharing a preset; one in Azure, about nine in dotnet, zero in the GitHub org, and the open-source program page names only GitHub-native features. So the hosted app is a minority, team-scoped path — but the self-hosted Action sidesteps the approval entirely.
 
-## Slide 51 — Renovate — the scoped spike config
+## Slide 49 — Renovate — the scoped spike config
 
 If the spike runs, this is its shape: one config across ecosystems, a stability window, auto-merge for minor and patch, and the torch pin preserved. Run through the Action, not the app, so there is no approval barrier. Auto-detection handles our ecosystems; only the custom pins and groups need translating, a few hours of work. Then decide on the merits — does it cut pull-request volume without losing the security lane.
 
-## Slide 52 — Alternatives considered and rejected
+## Slide 50 — Alternatives considered and rejected
 
 For honesty, the paths rejected and why. A custom bot reinvents grouping that is now native. Migrating straight to the Renovate app carries approval friction for a minority tool. Giving forks credentials through the base-context trigger is the pwn request. Running GPU on every pull request, or letting a runner execute contributor code, is too costly and risky unfunded. And pinning Python everywhere helps but does not exercise a real image install or device execution. Each shares one flaw: it buys control by adding risk or upkeep.
 
-## Slide 53 — Mandate and method
+## Slide 51 — Mandate and method
 
 Finally, provenance. The maintainers asked to solve the dependency problem at its root and to gate safe merges. The method was six parallel research threads, each writing a cited evidence file, grounded in the repository's own history, configurations, and pull requests, plus the prototype we executed this session inside the real Isaac image. The full research, with citations, lives in the tracking folder.

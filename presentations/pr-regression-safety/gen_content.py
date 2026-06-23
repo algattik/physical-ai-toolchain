@@ -582,59 +582,6 @@ safe-outputs:                   # the only way it can act
 Review this Dependabot PR and post an advisory comment.
 """
 
-# ---- gh-aw today vs proposed ----
-GHAW_TODAY = """
----
-engine: copilot
-on:                       # a maintainer types the command
-  slash_command:
-    name: aw-dependabot-review
-permissions:              # read-only token
-  contents: read
-  pull-requests: read
-safe-outputs:
-  add-comment: { max: 2 }
----
-# advisory only; runs whenever asked
-"""
-
-GHAW_PROPOSED = """
----
-engine: copilot
-on:                       # fire AFTER CI, automatically
-  workflow_run:
-    workflows: ["PR Validation"]
-    types: [completed]
-  skip-if-check-failing:  # don't burn tokens on red CI
-    include: ["PR Validation"]
-permissions: { contents: read, pull-requests: read }
-safe-outputs:
-  add-comment: { max: 1, hide-older-comments: true }   # one tidy comment
-  create-issue:                                        # high-risk path
-    labels: [dependencies]
-    assignees: [copilot]      # hand the fix to the coding agent
----
-"""
-
-# ---- NeMo babysitter (real, verified) ----
-NEMO_BABYSIT = """
-# NVIDIA-NeMo/NeMo .github/workflows/claude-babysit-pr.yml
-on:
-  workflow_run: { workflows: ["CICD NeMo"], types: [completed] }
-  issue_comment: { types: [created] }       # the human approval
-jobs:
-  investigate-and-propose:                   # CI failed -> Claude diagnoses
-    steps:
-      - uses: anthropics/claude-code-action@v1
-        with:
-          prompt: |
-            HALF-AUTONOMOUS: do NOT edit or push code.
-            Post ONE plan comment tagged <!-- babysit-plan -->.
-  execute-fix:                               # only AFTER "@claude go ahead"
-    if: contains(labels.*.name, 'Agent Plan Approved')
-    # verifies sender is on the team, then pushes the fix, re-runs CI
-"""
-
 NEMO_GATE = """
 # NeMo gates the expensive GPU run behind a human/queue approval
 cicd-wait-in-queue:
@@ -766,7 +713,7 @@ SLIDES = [
      "notes": "These five carry the rest of the talk, so they are worth a name. Eight-oh-nine and seven-ninety are interpreter mismatches: a lock resolved for one Python version against a runtime built on another. Nine-fifty-eight is a torch security bump that dragged in an incompatible CUDA runtime, and it still ships today because the lock pins one version while the pipeline force-installs another. Six-ninety-one and five-forty-seven are the pipeline disabling its own tests. And starlette shows the churn. Hold these five; every later recommendation maps back to them."},
 
     {"kind": "bullets", "accent": BLUE, "title": "What this asks for",
-     "body": "- Phase 0 \u2014 risk-aware Dependabot grouping        · config only · ~$0\n- Phase 1 \u2014 GPU-free smoke gate on every PR        · standard runners · ~$0\n- Phase 2 \u2014 safe automation: auto-merge + triage   · standard runners · ~$0\n- Phase 3 \u2014 gated GPU end-to-end (the capstone)    · funded GPU compute\n- Evidence: repo history, configs, PRs, and an executed prototype \u2014 cited in the appendix",
+     "body": "- Phase 0 \u2014 risk-aware Dependabot grouping        · config only · ~$0\n- Phase 1 \u2014 GPU-free smoke gate on every PR        · standard runners · ~$0\n- Phase 2 \u2014 safe automation: auto-merge + review  · standard runners · ~$0\n- Phase 3 \u2014 gated GPU end-to-end (the capstone)    · funded GPU compute\n- Evidence: repo history, configs, PRs, and an executed prototype \u2014 cited in the appendix",
      "notes": "The ask is four controls plus one capstone. Phases zero, one, and two are configuration and ordinary Actions runners \u2014 no Azure, no budget. Phase three is the only line that needs funded GPU compute, and it is the only one that can prove the GPU half of safe-to-merge. Each phase stands alone and reduces regressions on its own, so this is adopted incrementally, not as a single bet. Every claim that follows is grounded in the repo's own history and a prototype we ran."},
 
     # ================= CURRENT STATE (compact) =================
@@ -884,28 +831,16 @@ SLIDES = [
     # ================= PHASE 2 =================
     {"kind": "section", "part": "Phase 2", "title": "Safe automation",
      "sub": "Reclaim reviewer time without lowering the bar \u2014 ~$0",
-     "notes": "Phase two removes human toil from the safe path and routes the risky path to an agent, without weakening any gate."},
+     "notes": "Phase two removes human toil from the safe path without weakening any gate. It auto-merges only the bumps that are provably trivial, and leaves everything riskier to scoped manual review."},
 
     {"kind": "bullets", "accent": RED, "title": "Every low-risk bump waits on a human",
-     "body": "- Dependabot cannot merge its own PRs \u2014 trivial patches queue for a click\n- High-risk and low-risk updates get identical, manual handling\n- ~24 PRs/week of reviewer toil, most of it trivial\n- The advisory agent can fire before CI finishes \u2014 tokens spent on doomed PRs",
-     "notes": "The toil is concentrated in the safe path. Dependabot cannot merge its own pull requests, so every trivial patch waits for a maintainer's click, and high-risk and low-risk updates get the same manual handling \u2014 roughly twenty-four pull requests a week, most of them trivial. Meanwhile the advisory agent can run before the pipeline finishes, spending tokens on a pull request that is already failing. Both are fixable without touching the safety bar."},
-
-    {"kind": "code", "accent": PURPLE, "title": "What others do \u2014 NeMo's gated agentic loop",
-     "caption": "A real, human-approved CI-fix loop \u2014 NVIDIA-NeMo/NeMo",
-     "file": ".github/workflows/claude-babysit-pr.yml", "code": NEMO_BABYSIT, "code_size": 11.5,
-     "notes": "NVIDIA's NeMo runs the exact loop we want, in production. When CI fails, an agent investigates and posts one plan comment \u2014 and, in its own prompt, it must not edit or push code; it only proposes. A human approves by replying, and only then does a separate job, which first checks the approver is on the team, push the fix and re-run CI. The agent proposes; a person disposes. That gate is the model for our triage layer."},
-
-    {"kind": "codecompare", "accent": GREEN, "title": "Recommendation \u2014 wire the agent to CI",
-     "caption": "Same read-only agent and safe-outputs \u2014 but triggered by CI, not by hand",
-     "left_head": "Today \u2014 hand-triggered advisory", "left_accent": RED, "left_code": GHAW_TODAY,
-     "right_head": "Proposed \u2014 CI-triggered triage", "right_accent": GREEN, "right_code": GHAW_PROPOSED,
-     "code_size": 10.5,
-     "notes": "The change keeps the safety model and fixes the economics. Left is today: a slash command, an advisory comment whenever asked. Right is the proposal: the same read-only agent with the same safe-outputs, but fired when the pipeline completes, skipped when checks are failing so no tokens burn on red CI, kept to one updating comment, and for a high-risk bump it opens a single issue assigned to the Copilot coding agent. The decider triages; the coding agent does the work. We would pilot it advisory-only first, comparing its labels to maintainer labels before letting it create issues."},
+     "body": "- Dependabot cannot merge its own PRs \u2014 trivial patches queue for a click\n- High-risk and low-risk updates get identical, manual handling\n- ~24 PRs/week of reviewer toil, most of it trivial",
+     "notes": "The toil is concentrated in the safe path. Dependabot cannot merge its own pull requests, so every trivial patch waits for a maintainer's click, and high-risk and low-risk updates get the same manual handling \u2014 roughly twenty-four pull requests a week, most of them trivial. That is toil, not safety, and it is fixable without touching the safety bar."},
 
     {"kind": "code", "accent": GREEN, "title": "Recommendation \u2014 auto-merge, scoped tight",
      "caption": "`fetch-metadata` + `gh pr merge --auto` \u2014 patch-only, no runtime/GPU packages, no security",
      "file": "Proposed: auto-merge workflow", "code": C_AUTOMERGE,
-     "notes": "Auto-merge the trivially safe, and only that. Dependabot's fetch-metadata action reads the update type without running the pull request's code; for a development patch it enables auto-merge, which waits for the required checks. The natural objection \u2014 won't this cause incidents \u2014 is answered by scope: patch-only at first, development and docs and actions only, never a runtime or GPU package, never a security pull request, required checks green, and an instant-revert playbook. Everything riskier escalates to the triage layer."},
+     "notes": "Auto-merge the trivially safe, and only that \u2014 no agent, no inference. Dependabot's fetch-metadata action reads the update type without running the pull request's code; for a development patch it enables auto-merge, which waits for the required checks. The natural objection \u2014 won't this cause incidents \u2014 is answered by scope: patch-only at first, development and docs and actions only, never a runtime or GPU package, never a security pull request, required checks green, and an instant-revert playbook. Everything riskier stays in scoped manual review."},
 
     # ================= PHASE 3 =================
     {"kind": "section", "part": "Phase 3", "title": "Gated GPU end-to-end \u2014 the capstone",
@@ -954,7 +889,7 @@ SLIDES = [
           "items": "1a Tier 0 every PR · 1b Tier 1 real-image, path-gated · fail-safe check"},
          {"tag": "Phase 2", "when": "now · days", "accent": BLUE, "cost": "$0",
           "head": "Safe automation",
-          "items": "patch-only auto-merge on green · CI-triggered agentic triage"},
+          "items": "patch-only auto-merge on green · scoped manual review for the rest"},
          {"tag": "Phase 3", "when": "when funded", "accent": AMBER, "cost": "GPU $",
           "head": "Gated GPU e2e",
           "items": "approval-gated, two-job OIDC submit-and-poll to scale-from-zero pool"},
@@ -999,7 +934,7 @@ SLIDES = [
      "body": "gh-aw workflows are markdown that compiles to a normal Actions workflow (`.lock.yml`). The frontmatter picks an AI `engine`, a trigger, and read-only `tools`. The agent CANNOT write directly \u2014 only through declared `safe-outputs` (add-comment, create-issue\u2026). That read-only-plus-safe-outputs model is the whole safety story.",
      "terms": "gh-aw, engine, trigger, safe-outputs, lock file, read-only agent",
      "file": ".github/workflows/*.md", "code": P_GHAW,
-     "notes": "Agentic workflows are a markdown file that compiles into a normal Actions workflow. The frontmatter picks an engine, a trigger, and read-only tools. The agent cannot write anything directly; it acts only through declared safe-outputs, like adding a comment or creating an issue. That model is why an agent can be trusted to triage dependency pull requests."},
+     "notes": "Agentic workflows are a markdown file that compiles into a normal Actions workflow. The frontmatter picks an engine, a trigger, and read-only tools. The agent cannot write anything directly; it acts only through declared safe-outputs, like adding a comment or creating an issue. That model is why the repository's existing read-only reviewer can be trusted to post an advisory comment on a dependency pull request."},
 
     {"kind": "primer", "accent": GREEN, "title": "Primer \u2014 CI gating tiers",
      "body": "Cheap checks (lint, spell, lock-consistency) run on every PR; expensive checks run only when their area changed or a human releases them. This repo computes path booleans in one `changes` job and aggregates into ONE stable required check. The trap: a naive top-level `paths:` filter can leave a required check skipped \u2014 green having tested nothing.",
@@ -1079,11 +1014,10 @@ SLIDES = [
      "rows": [
          ("Volume", "~24 dependency PRs/week (~350 opened, ~216 merged all-time)"),
          ("Reviewer toil", "~24 PRs \u00d7 a few minutes triage + rebase comments each week"),
-         ("Agent waste", "advisory runs before CI \u2192 tokens spent on doomed PRs"),
          ("Phase 0+2 saves", "batching + patch auto-merge removes most trivial PRs from the queue"),
          ("Status quo cost", "~8 runtime incidents over the window; mean time-to-diagnose in hours"),
      ],
-     "notes": "The case for the cheap phases is also economic. Two dependency pull requests a day, most trivial, each costing reviewer minutes and agent tokens, with the agent sometimes spending those tokens on a pull request that will fail anyway. Batching and patch auto-merge take most of that queue away. Set against the status quo \u2014 eight runtime incidents over the window, each taking hours to diagnose \u2014 the configuration phases pay for themselves immediately, before any GPU spend."},
+     "notes": "The case for the cheap phases is also economic. Two dependency pull requests a day, most trivial, each costing reviewer minutes. Batching and patch auto-merge take most of that queue away. Set against the status quo \u2014 eight runtime incidents over the window, each taking hours to diagnose \u2014 the configuration phases pay for themselves immediately, before any GPU spend."},
 
     {"kind": "code", "accent": AMBER, "title": "Renovate \u2014 adoption across Microsoft OSS",
      "caption": "We checked directly \u2014 it shapes the approval friction",

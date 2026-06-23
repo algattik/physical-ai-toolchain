@@ -18,7 +18,7 @@ The repository's test pipeline runs CPU-only, but the regressions that actually 
 
 > Green CPU CI is blind to the costly regression classes → add risk-aware dependency intake, a GPU-free smoke gate that runs inside the real runtime image, safe automation, and — when funded — a gated GPU end-to-end run. Each phase stands alone; adopt incrementally.
 
-53 slides (34 core + 19 appendix). The structure, claims, and narration reflect a 7-lens critique pass. For the talk's reasoning watch the video; to **act on it**, the plan below is self-contained.
+51 slides (32 core + 19 appendix). The structure, claims, and narration reflect a 7-lens critique pass. For the talk's reasoning watch the video; to **act on it**, the plan below is self-contained.
 
 ## 🔥 The failure map
 
@@ -57,10 +57,10 @@ Phases 0–2 and the Renovate spike run on ordinary Actions runners (no Azure, ~
 
 ### Phase 2 — Safe automation · ~$0 · days
 
-- **Problem.** Dependabot cannot merge its own PRs, so every trivial patch waits on a click (~24 PRs/week). The advisory agent can fire before CI finishes, spending tokens on doomed PRs.
-- **Precedent.** `NVIDIA-NeMo/NeMo` runs a gated agentic loop: the agent posts one plan comment and must not push; a human approves; a separate job verifies team membership, then pushes and re-runs CI.
-- **Do this.** (a) Re-trigger the read-only gh-aw reviewer on `workflow_run` (skip-if-check-failing, one updating comment; for high-risk bumps open a single issue assigned to the Copilot coding agent). (b) Auto-merge **patch-only**, scoped to dev/docs/actions, no runtime/GPU packages, never security, required checks green, with an instant-revert playbook.
-- **Catches.** Reviewer toil; routes risk to a human-gated agent instead of straight to merge.
+- **Problem.** Dependabot cannot merge its own PRs, so every trivial patch waits on a click (~24 PRs/week), and high-risk and low-risk bumps get identical manual handling.
+- **Why not an AI agent.** A bump's risk is deterministic metadata — update-type (`fetch-metadata`) × package class × security flag — and whether it *breaks us* is answered by Phase 1's smoke gate actually running it, not by an LLM's opinion. Code changes in response to a bump are rare and usually a one-line pin or lock regen. So an agent that "triages" bumps duplicates Phase 0's config split and earns nothing; deterministic rules do the job.
+- **Do this.** Auto-merge **patch-only**, scoped to dev/docs/actions, no runtime/GPU packages, never security, required checks green, with an instant-revert playbook. `dependabot/fetch-metadata` reads the update type without running PR code. Everything riskier stays in scoped manual review.
+- **Catches.** Reviewer toil on the trivial tail, without lowering the bar.
 
 ### Phase 3 — Gated GPU end-to-end (the capstone) · funded
 
@@ -80,7 +80,7 @@ Concrete approvals a reviewer can give today:
 - [ ] **Phase 0** — approve the `dependabot.yml` grouping + cooldown change.
 - [ ] **Phase 1a** — approve the Tier-0 required check on every PR.
 - [ ] **Phase 1b** — approve a Tier-1 real-image smoke spike with a runtime cap.
-- [ ] **Phase 2** — approve a patch-only auto-merge pilot (dev/docs/actions) + CI-triggered agentic triage.
+- [ ] **Phase 2** — approve a patch-only auto-merge pilot (dev/docs/actions); risk stays in manual review.
 - [ ] **Spike** — approve a time-boxed Renovate evaluation via `github-action`.
 - [ ] **Phase 3** — defer pending a GPU budget number; the design is settled.
 - [ ] **Now, out of band** — fix the live torch 2.10 / 2.11 desync (`pytest-training.yml` force-installs 2.11 while the lock pins 2.10). This is a bug, not a decision.

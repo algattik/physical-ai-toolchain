@@ -37,7 +37,7 @@ slides:
   - - '#691 / #547 — tests off'
     - path-filter bugs silently disabled fuzz, data-pipeline, and training tests for weeks
   - - churn
-    - starlette bumped 0.52→1.0→1.3 in ~11 days — three churning security PRs
+    - starlette churned 0.52→1.0→1.3 across ~7 dependency PRs and a downgrade-then-rebump in ~12 days
   notes: 'These five carry the rest of the talk, so they are worth a name. Eight-oh-nine and seven-ninety are interpreter mismatches: a lock resolved for one Python version against a runtime built on another. Nine-fifty-eight is a torch security bump that dragged in an incompatible CUDA runtime, and it still ships today because the lock pins one version while the pipeline force-installs another. Six-ninety-one and five-forty-seven are the pipeline disabling its own tests. And starlette shows the churn. Hold these five; every later recommendation maps back to them.'
 - id: what-this-asks-for
   kind: bullets
@@ -46,7 +46,7 @@ slides:
   body: |-
     - Phase 0 — risk-aware Dependabot grouping        · config only · ~$0
     - Phase 1 — GPU-free smoke gate on every PR        · standard runners · ~$0
-    - Phase 2 — safe automation: auto-merge + triage   · standard runners · ~$0
+    - Phase 2 — safe automation: auto-merge + review  · standard runners · ~$0
     - Phase 3 — gated GPU end-to-end (the capstone)    · funded GPU compute
     - Evidence: repo history, configs, PRs, and an executed prototype — cited in the appendix
   notes: The ask is four controls plus one capstone. Phases zero, one, and two are configuration and ordinary Actions runners — no Azure, no budget. Phase three is the only line that needs funded GPU compute, and it is the only one that can prove the GPU half of safe-to-merge. Each phase stands alone and reduces regressions on its own, so this is adopted incrementally, not as a single bet. Every claim that follows is grounded in the repo's own history and a prototype we ran.
@@ -173,7 +173,7 @@ slides:
     - y
     - n
     - n
-  - label: churn · starlette ×3
+  - label: churn · starlette ×7
     sub: noise / wasted reviews
     cells:
     - x
@@ -293,15 +293,15 @@ slides:
   left_head: Tier 0 — venv, seconds, every PR
   left_accent: '#107C10'
   left_body: |-
-    - uv lock --check — resolution drift
-    - import in a CPU venv + --help
-    - YAML schema-validate, shellcheck
+    - `uv lock --check` — resolution drift
+    - import in a CPU venv + `--help`
+    - YAML schema-validate, `shellcheck`
     - Cheap; runs on EVERY PR
     - Caveat: CPU wheels ≠ the production CUDA graph
   right_head: Tier 1 — inside the real image, minutes
   right_accent: '#0078D4'
   right_body: |-
-    - docker run the ACTUAL runtime image
+    - `docker run` the ACTUAL runtime image
     - reinstall the PR's lock as prod does
     - import on the real interpreter (Isaac = 3.11)
     - Catches #809, probably #790 — deterministically
@@ -315,17 +315,18 @@ slides:
   file: 'Proposed: isaac-import-smoke.sh'
   code: |2
 
-    # Pull the REAL runtime image and reinstall the PR's lock, then import.
-    # Interpreter / marker breaks (#809, #790) fail at install or import — no GPU.
+    # Pull the REAL runtime image and reinstall the PR's lock the way prod does,
+    # then run the launcher's import-check mode (same graph as training, stops
+    # before AppLauncher — the only GPU step).
     docker run --rm --platform linux/amd64 \
       nvcr.io/nvidia/isaac-lab:2.3.2 bash -lc '
         /isaac-sim/kit/python/bin/python3 -V        # 3.11 — the real runtime
         uv export --frozen --no-emit-project --directory training/rl \
-          | uv pip install --system --no-deps -r -  # the PR lock, as prod installs it
-        python -c "import skrl_training, cli_args"   # CPU-safe RL modules
-    '   # a 3.12-resolved lock (the #809 break) fails THIS import, on CPU
+          | uv pip install --system --no-deps -r -  # <- the #809 3.12-lock fails HERE
+        python -m training.rl.scripts.launch --mode import-check  # ABI net: graph loads?
+    '   # all on CPU — no GPU touched
   code_size: 12
-  notes: 'Concretely, for the hardest environment: pull the real Isaac image, set its actual interpreter, then export the pull request''s lock and install it with no-deps, exactly as the training workflow does. Then import the CPU-safe modules. Eight-oh-nine was a lock resolved for three-twelve against this three-eleven runtime, and that mismatch makes this very import fail, on a CPU agent, with no GPU involved. Mirroring the production install is what makes it catch a production break.'
+  notes: 'Concretely, for the hardest environment: pull the real Isaac image and reinstall the pull request''s lock with no-deps, exactly as the training job does, on the real three-eleven interpreter. That install step is the circuit breaker for the interpreter and marker class — eight-oh-nine was a lock resolved for three-twelve, and it fails right here, before anything imports, on a CPU agent. The import-check mode is the follow-on net: it runs the real launcher far enough to load the Isaac, SKRL, and gym graph, then stops before AppLauncher, the only GPU step — catching a package that installs but will not load on the runtime. Neither step needs a GPU.'
 - id: we-ran-it-it-catches-809-on-cpu
   kind: code
   accent: '#107C10'
@@ -371,7 +372,7 @@ slides:
   part: Phase 2
   title: Safe automation
   sub: Reclaim reviewer time without lowering the bar — ~$0
-  notes: Phase two removes human toil from the safe path and routes the risky path to an agent, without weakening any gate.
+  notes: Phase two removes human toil from the safe path without weakening any gate. It auto-merges only the bumps that are provably trivial, and leaves everything riskier to scoped manual review.
 - id: every-low-risk-bump-waits-on-a-human
   kind: bullets
   accent: '#C4314B'
@@ -380,80 +381,12 @@ slides:
     - Dependabot cannot merge its own PRs — trivial patches queue for a click
     - High-risk and low-risk updates get identical, manual handling
     - ~24 PRs/week of reviewer toil, most of it trivial
-    - The advisory agent can fire before CI finishes — tokens spent on doomed PRs
-  notes: The toil is concentrated in the safe path. Dependabot cannot merge its own pull requests, so every trivial patch waits for a maintainer's click, and high-risk and low-risk updates get the same manual handling — roughly twenty-four pull requests a week, most of them trivial. Meanwhile the advisory agent can run before the pipeline finishes, spending tokens on a pull request that is already failing. Both are fixable without touching the safety bar.
-- id: what-others-do-nemo-s-gated-agentic-loop
-  kind: code
-  accent: '#5C2E91'
-  title: What others do — NeMo's gated agentic loop
-  caption: A real, human-approved CI-fix loop — NVIDIA-NeMo/NeMo
-  file: .github/workflows/claude-babysit-pr.yml
-  code: |2
-
-    # NVIDIA-NeMo/NeMo .github/workflows/claude-babysit-pr.yml
-    on:
-      workflow_run: { workflows: ["CICD NeMo"], types: [completed] }
-      issue_comment: { types: [created] }       # the human approval
-    jobs:
-      investigate-and-propose:                   # CI failed -> Claude diagnoses
-        steps:
-          - uses: anthropics/claude-code-action@v1
-            with:
-              prompt: |
-                HALF-AUTONOMOUS: do NOT edit or push code.
-                Post ONE plan comment tagged <!-- babysit-plan -->.
-      execute-fix:                               # only AFTER "@claude go ahead"
-        if: contains(labels.*.name, 'Agent Plan Approved')
-        # verifies sender is on the team, then pushes the fix, re-runs CI
-  code_size: 11.5
-  notes: NVIDIA's NeMo runs the exact loop we want, in production. When CI fails, an agent investigates and posts one plan comment — and, in its own prompt, it must not edit or push code; it only proposes. A human approves by replying, and only then does a separate job, which first checks the approver is on the team, push the fix and re-run CI. The agent proposes; a person disposes. That gate is the model for our triage layer.
-- id: recommendation-wire-the-agent-to-ci
-  kind: codecompare
-  accent: '#107C10'
-  title: Recommendation — wire the agent to CI
-  caption: Same read-only agent and safe-outputs — but triggered by CI, not by hand
-  left_head: Today — hand-triggered advisory
-  left_accent: '#C4314B'
-  left_code: |2
-
-    ---
-    engine: copilot
-    on:                       # a maintainer types the command
-      slash_command:
-        name: aw-dependabot-review
-    permissions:              # read-only token
-      contents: read
-      pull-requests: read
-    safe-outputs:
-      add-comment: { max: 2 }
-    ---
-    # advisory only; runs whenever asked
-  right_head: Proposed — CI-triggered triage
-  right_accent: '#107C10'
-  right_code: |2
-
-    ---
-    engine: copilot
-    on:                       # fire AFTER CI, automatically
-      workflow_run:
-        workflows: ["PR Validation"]
-        types: [completed]
-      skip-if-check-failing:  # don't burn tokens on red CI
-        include: ["PR Validation"]
-    permissions: { contents: read, pull-requests: read }
-    safe-outputs:
-      add-comment: { max: 1, hide-older-comments: true }   # one tidy comment
-      create-issue:                                        # high-risk path
-        labels: [dependencies]
-        assignees: [copilot]      # hand the fix to the coding agent
-    ---
-  code_size: 10.5
-  notes: 'The change keeps the safety model and fixes the economics. Left is today: a slash command, an advisory comment whenever asked. Right is the proposal: the same read-only agent with the same safe-outputs, but fired when the pipeline completes, skipped when checks are failing so no tokens burn on red CI, kept to one updating comment, and for a high-risk bump it opens a single issue assigned to the Copilot coding agent. The decider triages; the coding agent does the work. We would pilot it advisory-only first, comparing its labels to maintainer labels before letting it create issues.'
+  notes: The toil is concentrated in the safe path. Dependabot cannot merge its own pull requests, so every trivial patch waits for a maintainer's click, and high-risk and low-risk updates get the same manual handling — roughly twenty-four pull requests a week, most of them trivial. That is toil, not safety, and it is fixable without touching the safety bar.
 - id: recommendation-auto-merge-scoped-tight
   kind: code
   accent: '#107C10'
   title: Recommendation — auto-merge, scoped tight
-  caption: fetch-metadata + gh pr merge --auto — patch-only, no runtime/GPU packages, no security
+  caption: '`fetch-metadata` + `gh pr merge --auto` — patch-only, no runtime/GPU packages, no security'
   file: 'Proposed: auto-merge workflow'
   code: |2
 
@@ -469,7 +402,7 @@ slides:
               steps.meta.outputs.dependency-type == 'direct:development'
             run: gh pr merge --auto --squash "$PR_URL"   # waits for green required checks
     # security PRs are never auto-merged; torch/cuda/isaac/numpy excluded by allowlist
-  notes: 'Auto-merge the trivially safe, and only that. Dependabot''s fetch-metadata action reads the update type without running the pull request''s code; for a development patch it enables auto-merge, which waits for the required checks. The natural objection — won''t this cause incidents — is answered by scope: patch-only at first, development and docs and actions only, never a runtime or GPU package, never a security pull request, required checks green, and an instant-revert playbook. Everything riskier escalates to the triage layer.'
+  notes: 'Auto-merge the trivially safe, and only that — no agent, no inference. Dependabot''s fetch-metadata action reads the update type without running the pull request''s code; for a development patch it enables auto-merge, which waits for the required checks. The natural objection — won''t this cause incidents — is answered by scope: patch-only at first, development and docs and actions only, never a runtime or GPU package, never a security pull request, required checks green, and an instant-revert playbook. Everything riskier stays in scoped manual review.'
 - id: gated-gpu-end-to-end-the-capstone
   kind: section
   part: Phase 3
@@ -580,7 +513,7 @@ slides:
     accent: '#0078D4'
     cost: $0
     head: Safe automation
-    items: patch-only auto-merge on green · CI-triggered agentic triage
+    items: patch-only auto-merge on green · scoped manual review for the rest
   - tag: Phase 3
     when: when funded
     accent: '#9D5D00'
@@ -599,7 +532,7 @@ slides:
   accent: '#0078D4'
   title: Decision requested today
   body: |-
-    - Approve the Phase 0 dependabot.yml change (grouping + cooldown)
+    - Approve the Phase 0 `dependabot.yml` change (grouping + cooldown)
     - Approve the Phase 1a Tier-0 required check on every PR
     - Approve a Phase 1b Tier-1 real-image spike with a runtime cap
     - Approve a Phase 2 patch-only auto-merge pilot (dev/docs/actions)
@@ -691,7 +624,7 @@ slides:
       add-comment: { max: 1 }
     ---
     Review this Dependabot PR and post an advisory comment.
-  notes: Agentic workflows are a markdown file that compiles into a normal Actions workflow. The frontmatter picks an engine, a trigger, and read-only tools. The agent cannot write anything directly; it acts only through declared safe-outputs, like adding a comment or creating an issue. That model is why an agent can be trusted to triage dependency pull requests.
+  notes: Agentic workflows are a markdown file that compiles into a normal Actions workflow. The frontmatter picks an engine, a trigger, and read-only tools. The agent cannot write anything directly; it acts only through declared safe-outputs, like adding a comment or creating an issue. That model is why the repository's existing read-only reviewer can be trusted to post an advisory comment on a dependency pull request.
 - id: primer-ci-gating-tiers
   kind: primer
   accent: '#107C10'
@@ -914,13 +847,11 @@ slides:
     - ~24 dependency PRs/week (~350 opened, ~216 merged all-time)
   - - Reviewer toil
     - ~24 PRs × a few minutes triage + rebase comments each week
-  - - Agent waste
-    - advisory runs before CI → tokens spent on doomed PRs
   - - Phase 0+2 saves
     - batching + patch auto-merge removes most trivial PRs from the queue
   - - Status quo cost
     - ~8 runtime incidents over the window; mean time-to-diagnose in hours
-  notes: The case for the cheap phases is also economic. Two dependency pull requests a day, most trivial, each costing reviewer minutes and agent tokens, with the agent sometimes spending those tokens on a pull request that will fail anyway. Batching and patch auto-merge take most of that queue away. Set against the status quo — eight runtime incidents over the window, each taking hours to diagnose — the configuration phases pay for themselves immediately, before any GPU spend.
+  notes: The case for the cheap phases is also economic. Two dependency pull requests a day, most trivial, each costing reviewer minutes. Batching and patch auto-merge take most of that queue away. Set against the status quo — eight runtime incidents over the window, each taking hours to diagnose — the configuration phases pay for themselves immediately, before any GPU spend.
 - id: renovate-adoption-across-microsoft-oss
   kind: code
   accent: '#9D5D00'

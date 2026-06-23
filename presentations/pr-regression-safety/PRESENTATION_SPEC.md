@@ -12,7 +12,7 @@ Authoritative, persistent record of @algattik's instructions for this narrated d
 - Video: `SPEED=1.8 ./build_video.sh` (TTS via macOS `say`, ffmpeg per-slide clips → concat `presentation.mp4`). Then `open presentation.mp4`.
 - **Audio robustness:** macOS `say` can transiently hang. Pre-synthesize all `audio/slide-NN.aiff` with `timeout 70 say` + retry, and validate each with `ffprobe` duration > 0 (a killed `say` leaves a corrupt aiff that makes `build_video.sh` divide-by-zero). Clear `audio/`+`clips/` when the slide set changes.
 
-## Structure (REQUIRED) — re-cut 2026-06-22 to a decision deck (34 core + ~19 appendix)
+## Structure (REQUIRED) — re-cut 2026-06-22 to a decision deck (32 core + ~19 appendix)
 
 Decision-ladder, not a research readout. Open with stakes, end with the ask; tool-vocabulary primers live in the appendix.
 
@@ -47,7 +47,8 @@ A color-banded **phased roadmap** slide is mandatory (Phase 0–3 + Spike, cost 
 - **Isaac image:** do NOT state it's public / no NGC key (obvious) — removed.
 - Fixed: "any particular programme" → "adopt incrementally — each fix stands alone".
 - Renovate/vercel-ai contradiction resolved: vercel/ai is npm-only and left Renovate for simplicity — not evidence against Renovate here.
-- Live torch desync (PR #958): lock pins torch 2.10.0, `pytest-training.yml:41` force-installs 2.11.0.
+- **Live torch desync (PR #958):** lock pins torch 2.10.0, `pytest-training.yml:41` force-installs 2.11.0.
+- **Phase 2 de-scoped to deterministic (2026-06-23, @algattik):** dropped the AI decider/doer for dependency bumps. Rationale: a bump's risk is deterministic metadata (update-type × package-class × security-flag) and breakage is caught by Phase 1 *running* the smoke/import/lock gate, not by an LLM; code changes in response to bumps are rare and usually one-line pins/locks. Phase 2 = deterministic patch-only auto-merge + scoped manual review for the rest. **Cut slides:** "NeMo's gated agentic loop" (babysitter) and "wire the agent to CI" (gh-aw today/proposed codecompare). NeMo stays only in the Phase 3 GPU-gating slide. The gh-aw primer stays (teaching), reframed to the existing advisory reviewer, not a triage proposal.
 
 ## Latest detail asks (2026-06-22)
 - **Tutorial / primer section (REQUIRED):** add an explicit teaching section for the CI/CD-generalist audience covering **Dependabot** (version vs security updates, groups, ignore, cooldown, lockfile handling), **gh-aw** (agentic workflows: markdown→compiled workflow, read-only agent + safe-outputs model), and any other worthwhile concept (CI gating tiers; `pull_request` vs `pull_request_target` + OIDC + Environments for running untrusted PR code; uv/lockfiles; GHSA security advisories). Concrete tiny examples + a glossary. **Length is not a concern** — user said don't worry if the prez gets long. Place the primer up front (after Intro, before AA Current state) so later analysis lands.
