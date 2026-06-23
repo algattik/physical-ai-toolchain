@@ -676,15 +676,16 @@ environment: azureml:isaaclab-training-env:latest
 
 # ---- Tier-1 real-image import-smoke (catches the #809/#790 interpreter class) ----
 C_TIER1 = """
-# Pull the REAL runtime image and reinstall the PR's lock, then import.
-# Interpreter / marker breaks (#809, #790) fail at install or import — no GPU.
+# Pull the REAL runtime image and reinstall the PR's lock the way prod does,
+# then run the launcher's import-check mode (same graph as training, stops
+# before AppLauncher — the only GPU step).
 docker run --rm --platform linux/amd64 \\
   nvcr.io/nvidia/isaac-lab:2.3.2 bash -lc '
     /isaac-sim/kit/python/bin/python3 -V        # 3.11 — the real runtime
     uv export --frozen --no-emit-project --directory training/rl \\
-      | uv pip install --system --no-deps -r -  # the PR lock, as prod installs it
-    python -c "import skrl_training, cli_args"   # CPU-safe RL modules
-'   # a 3.12-resolved lock (the #809 break) fails THIS import, on CPU
+      | uv pip install --system --no-deps -r -  # <- the #809 3.12-lock fails HERE
+    python -m training.rl.scripts.launch --mode import-check  # ABI net: graph loads?
+'   # all on CPU — no GPU touched
 """
 
 C_TIER_MATRIX = """
@@ -868,7 +869,7 @@ SLIDES = [
     {"kind": "code", "accent": GREEN, "title": "Tier 1 \u2014 import inside the real image",
      "caption": "The recipe that catches the #809 class \u2014 no GPU; it fails at import",
      "file": "Proposed: isaac-import-smoke.sh", "code": C_TIER1, "code_size": 12,
-     "notes": "Concretely, for the hardest environment: pull the real Isaac image, set its actual interpreter, then export the pull request's lock and install it with no-deps, exactly as the training workflow does. Then import the CPU-safe modules. Eight-oh-nine was a lock resolved for three-twelve against this three-eleven runtime, and that mismatch makes this very import fail, on a CPU agent, with no GPU involved. Mirroring the production install is what makes it catch a production break."},
+     "notes": "Concretely, for the hardest environment: pull the real Isaac image and reinstall the pull request's lock with no-deps, exactly as the training job does, on the real three-eleven interpreter. That install step is the circuit breaker for the interpreter and marker class \u2014 eight-oh-nine was a lock resolved for three-twelve, and it fails right here, before anything imports, on a CPU agent. The import-check mode is the follow-on net: it runs the real launcher far enough to load the Isaac, SKRL, and gym graph, then stops before AppLauncher, the only GPU step \u2014 catching a package that installs but will not load on the runtime. Neither step needs a GPU."},
 
     {"kind": "code", "accent": GREEN, "title": "We ran it \u2014 it catches #809 on CPU",
      "caption": "Executed this session inside the actual Isaac image, CPU only",

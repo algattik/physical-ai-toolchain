@@ -72,7 +72,7 @@ CPU smoke has two depths, and naming them prevents a costly confusion. Tier zero
 
 ## Slide 18 — Tier 1 — import inside the real image
 
-Concretely, for the hardest environment: pull the real Isaac image, set its actual interpreter, then export the pull request's lock and install it with no-deps, exactly as the training workflow does. Then import the CPU-safe modules. Eight-oh-nine was a lock resolved for three-twelve against this three-eleven runtime, and that mismatch makes this very import fail, on a CPU agent, with no GPU involved. Mirroring the production install is what makes it catch a production break.
+Concretely, for the hardest environment: pull the real Isaac image and reinstall the pull request's lock with no-deps, exactly as the training job does, on the real three-eleven interpreter. That install step is the circuit breaker for the interpreter and marker class — eight-oh-nine was a lock resolved for three-twelve, and it fails right here, before anything imports, on a CPU agent. The import-check mode is the follow-on net: it runs the real launcher far enough to load the Isaac, SKRL, and gym graph, then stops before AppLauncher, the only GPU step — catching a package that installs but will not load on the runtime. Neither step needs a GPU.
 
 ## Slide 19 — We ran it — it catches #809 on CPU
 
