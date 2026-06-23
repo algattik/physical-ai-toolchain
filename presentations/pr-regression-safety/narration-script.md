@@ -196,11 +196,11 @@ The case for the cheap phases is also economic. Two dependency pull requests a d
 
 ## Slide 49 — Anticipated objections
 
-The objections a skeptical maintainer will raise, answered. Auto-merge is safe because it is scoped to patches in non-runtime areas with an instant revert. Pinning Python is necessary but not sufficient — it does not exercise a real image install or device execution. Replacing Dependabot now is premature when grouping is native and Renovate is a minority tool here. GPU on every pull request is too costly and unsafe for forks. And the prototype, run under emulation, is enough to prove the interpreter class, though a native runner would harden the final confidence.
+The objections a skeptical maintainer will raise, answered. Auto-merge is safe because it is scoped to patches in non-runtime areas with an instant revert. Replacing Dependabot now is premature when grouping is native and Renovate is a minority tool here. GPU on every pull request is too costly and unsafe for forks. And the prototype, run under emulation, is enough to prove the interpreter class, though a native runner would harden the final confidence.
 
 ## Slide 50 — Alternatives considered and rejected
 
-For honesty, the paths rejected and why. A custom bot reinvents grouping that is now native. Migrating straight to the Renovate app carries approval friction for a minority tool. Giving forks credentials through the base-context trigger is the pwn request. Running GPU on every pull request, or letting a runner execute contributor code, is too costly and risky unfunded. And pinning Python everywhere helps but does not exercise a real image install or device execution. Each shares one flaw: it buys control by adding risk or upkeep.
+For honesty, the paths rejected and why. A custom bot reinvents grouping that is now native. Migrating straight to the Renovate app carries approval friction for a minority tool. Giving forks credentials through the base-context trigger is the pwn request. Running GPU on every pull request, or letting a runner execute contributor code, is too costly and risky unfunded. Each shares one flaw: it buys control by adding risk or upkeep.
 
 ## Slide 51 — Mandate and method
 
