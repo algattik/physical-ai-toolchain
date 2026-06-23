@@ -7,13 +7,12 @@ The repository's test pipeline runs CPU-only, but the regressions that actually 
 
 ## ▶️ Watch (≈26 min)
 
-<video src="https://github.com/algattik/physical-ai-toolchain/raw/refs/heads/rpi/ci-testing/presentations/pr-regression-safety/presentation.mp4" controls width="100%">
-  Your browser does not render embedded video. Download or view the file directly:
-  <a href="presentation.mp4">presentation.mp4</a>.
-</video>
+[![Play — PR Regression Safety, a ~26 minute narrated talk](poster.jpg)](presentation.mp4)
+
+**[▶ Play the narrated video](presentation.mp4)** (~60 MB) — opens a player on GitHub. Prefer the slides? See the silent [`deck/presentation.pdf`](deck/presentation.pdf).
 
 > [!NOTE]
-> GitHub renders the player on desktop web only. On mobile or if it doesn't load, use [`presentation.mp4`](presentation.mp4) (~60 MB) or the silent [`deck/presentation.pdf`](deck/presentation.pdf).
+> GitHub does not embed an inline player for repo-committed video, so the image above links to the file's page, where GitHub shows a player. Click it, or use the links below it.
 
 ## 🗺️ The argument in one line
 
