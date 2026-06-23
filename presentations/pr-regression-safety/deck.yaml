@@ -548,12 +548,12 @@ slides:
   title: Questions
   sub: 'Appendix follows: primers, prototype detail, costs, and alternatives'
   notes: 'That is the case: the regressions are real and runtime-specific, four controls ship now for almost nothing, and the GPU capstone is designed and waiting on a budget number. The appendix has the primers, the prototype detail, the economics, and the rejected alternatives. I will stop there.'
-- id: reference-and-backup
+- id: primers-glossary
   kind: section
-  part: Appendix
-  title: Reference and backup
-  sub: Tool primers, prototype mechanics, economics, and alternatives
-  notes: 'Reference material for questions: the tool primers, the deeper smoke mechanics, the cost model, and the alternatives we weighed.'
+  part: Appendix A
+  title: Primers & glossary
+  sub: The tool concepts referenced throughout — pull up on demand
+  notes: 'Appendix A is the tool primers and the glossary: the concepts the talk leans on, here for anyone who wants the definition behind a term.'
 - id: primer-dependabot
   kind: primer
   accent: '#0078D4'
@@ -686,127 +686,17 @@ slides:
   - - smoke test
     - tiny fast check that the critical path works
   notes: A glossary to leave up for reference — the terms used through the talk, each in a line. Not read aloud.
-- id: these-are-production-contracts-not-toy-configs
-  kind: code
-  accent: '#0078D4'
-  title: These are production contracts, not toy configs
-  caption: e.g. the AzureML job contract for an Isaac Lab GPU training container
-  file: training/rl/workflows/azureml/train.yaml
-  code: |2
-
-    environment_variables:
-      PYTHON: /workspace/isaaclab/isaaclab.sh -p
-      ACCEPT_EULA: "Y"
-      PRIVACY_CONSENT: "Y"
-      HYDRA_FULL_ERROR: "1"
-      TRAINING_CHECKPOINT_OUTPUT: ${{outputs.checkpoints}}
-      # Do NOT add ${{outputs.X}} env vars here — AzureML does not
-      # substitute template expressions in environment_variables
-      # (only inside command:). Training reads $AZURE_ML_OUTPUT_<NAME>.
-    compute: azureml:gpu-cluster
-    environment: azureml:isaaclab-training-env:latest
-  notes: Two surfaces can break, not one. This is the AzureML job contract for an Isaac training container — the runtime wrapper, the mandatory EULA, the checkpoint behavior. A dependency bump can break the container's runtime packaging, caught by import smoke, or the submission contract that renders this YAML, caught by config-preview, or on-device execution, caught only by the GPU tier. Different tests catch each; that is why the gate is layered.
-- id: tier-1-one-image-per-job-disk-gated
-  kind: code
-  accent: '#0078D4'
-  title: Tier 1 — one image per job, disk-gated
-  caption: Disk is the binding constraint, not capability
-  file: smoke-environments.yml
-  code: |2
-
-    # one image per job (can't co-resident 18+18+9 GB) · path-gated
-    matrix:
-      - {dir: training/rl,         image: isaac-lab:2.3.2}          # on training/rl/**
-      - {dir: training/il/lerobot, image: pytorch:2.11.0-cuda12.8}  # on training/il/**
-      - {dir: evaluation,          image: <build Dockerfile.lerobot-eval>}
-    steps:
-      - uses: jlumbroso/free-disk-space@<sha>   # Isaac ~18-22 GB unpacked
-      - run: docker system prune -af            # between matrix legs
-  code_size: 12
-  notes: Tier one's honest constraint is disk. Isaac unpacks to around twenty gigabytes, the PyTorch image another fifteen, the eval image seven to nine — they cannot co-reside even after a free-disk step. So it is one image per matrix job, pruned between legs, path-gated to the environment whose dependencies actually moved. The secondary cost, pull time, a nightly cache warm-up absorbs.
-- id: a-small-refactor-widens-the-isaac-smoke
-  kind: code
-  accent: '#107C10'
-  title: A small refactor widens the Isaac smoke
-  caption: Move AppLauncher into main() — like skrl already does (with real acceptance criteria)
-  file: training/rl/scripts/rsl_rl/train.py
-  code: |2
-
-    # training/rl/scripts/rsl_rl/train.py — a small refactor widens CPU smoke
-    # BEFORE (module top level): even `--help` needs a GPU
-    app_launcher = AppLauncher(args_cli)        # <- runs at import
-
-    # AFTER: guard it in main() (like skrl_training.py already does)
-    def main():
-        app_launcher = AppLauncher(args_cli)    # GPU only when actually run
-    # Acceptance: imports on CPU · --help exits pre-AppLauncher · argv preserved
-    #   · GPU launch + Hydra/MLflow side-effects unchanged · covered by a test
-  code_size: 12.5
-  notes: 'One small repository change deepens the Isaac smoke. Today the RSL launcher builds the Isaac AppLauncher at module top level, so the file cannot be imported or show help without a GPU. Moving that call into a main function, as the SKRL script already does, makes the module importable on a CPU agent. It is small, but it is not zero: it needs acceptance criteria — imports on CPU, help exits before the launcher, argument order preserved, GPU behavior unchanged, and a test to hold all of that.'
-- id: smoke-operating-cost-and-the-fail-safe-gate
-  kind: code
-  accent: '#107C10'
-  title: Smoke operating cost and the fail-safe gate
-  caption: Who owns it, what it costs to run, and why a skip can't pass as green
-  file: 'Proposed: pr-smoke-summary'
-  code: |2
-
-    # Fail-safe path gate: the required check ALWAYS runs and is never 'skipped'.
-    jobs:
-      changes:                     # detect which areas moved (this job is tested)
-        outputs: { rl: ..., il: ..., lock: ... }
-      smoke-rl:
-        needs: changes
-        if: needs.changes.outputs.rl == 'true' || needs.changes.outputs.lock == 'true'
-      pr-smoke-summary:            # the ONE required check for branch protection
-        needs: [changes, smoke-rl, smoke-il]
-        if: always()               # never 'skipped' -> a skip can't masquerade as green
-        run: |                     # any lockfile change forces the heavy legs;
-          [ "$rl" = success ] || [ "$rl_skipped_ok" ] || exit 1   # a wrongly-skipped leg FAILS
-  code_size: 12
-  notes: 'A new gate has running costs, so own them explicitly. The smoke tier''s runtime is minutes; its known flakes are image-pull timeouts and free-disk fragility, triaged by a re-run and a cache; an owner watches schema drift as images change. And the fail-safe pattern is the heart of it: the required summary always runs, never reports skipped, and a wrongly-skipped heavy leg fails the check rather than passing silently — which is exactly what bit this repo in six-ninety-one and five-forty-seven.'
-- id: anticipated-objections
-  kind: deflist
-  accent: '#9D5D00'
-  title: Anticipated objections
-  label_w: 4.2
-  label_size: 13
-  desc_size: 12.5
-  rows:
-  - - Won't auto-merge cause incidents?
-    - patch-only, dev/docs/actions, no runtime/GPU pkgs, no security batch, checks green, instant revert
-  - - Why not just pin Python everywhere?
-    - necessary but insufficient — pins don't exercise real-image installs, transitive ABI, or CUDA/MIG
-  - - Why not replace Dependabot now?
-    - native grouping covers most of it; the Renovate App is niche in MSFT OSS — spike first
-  - - Why not GPU on every PR?
-    - cost, plus running fork code on a GPU runner; gate + submit-and-poll instead
-  - - Is emulated-amd64 proof representative?
-    - enough for interpreter/marker breaks; final confidence needs a native amd64 runner
-  notes: The objections a skeptical maintainer will raise, answered. Auto-merge is safe because it is scoped to patches in non-runtime areas with an instant revert. Pinning Python is necessary but not sufficient — it does not exercise a real image install or device execution. Replacing Dependabot now is premature when grouping is native and Renovate is a minority tool here. GPU on every pull request is too costly and unsafe for forks. And the prototype, run under emulation, is enough to prove the interpreter class, though a native runner would harden the final confidence.
-- id: economics-the-toil-being-priced-out
-  kind: deflist
-  accent: '#0078D4'
-  title: Economics — the toil being priced out
-  caption: 'Order-of-magnitude, to compare against the status quo (confidence: moderate)'
-  label_w: 3.4
-  label_size: 13.5
-  desc_size: 13
-  rows:
-  - - Volume
-    - ~24 dependency PRs/week (~350 opened, ~216 merged all-time)
-  - - Reviewer toil
-    - ~24 PRs × a few minutes triage + rebase comments each week
-  - - Phase 0+2 saves
-    - batching + patch auto-merge removes most trivial PRs from the queue
-  - - Status quo cost
-    - ~8 runtime incidents over the window; mean time-to-diagnose in hours
-  notes: The case for the cheap phases is also economic. Two dependency pull requests a day, most trivial, each costing reviewer minutes. Batching and patch auto-merge take most of that queue away. Set against the status quo — eight runtime incidents over the window, each taking hours to diagnose — the configuration phases pay for themselves immediately, before any GPU spend.
+- id: phase-mechanics
+  kind: section
+  part: Appendix B
+  title: Phase mechanics
+  sub: How each recommendation works in detail — ordered Phase 0 → Phase 1
+  notes: 'Appendix B is the mechanics behind the phase recommendations, in running order: first the Phase 0 dependency-intake detail, then the Phase 1 smoke-gate detail.'
 - id: renovate-adoption-across-microsoft-oss
   kind: code
   accent: '#9D5D00'
   title: Renovate — adoption across Microsoft OSS
-  caption: We checked directly — it shapes the approval friction
+  caption: Phase 0 · We checked directly — it shapes the approval friction
   file: 'evidence: Sourcegraph + file fetches'
   code: |2
 
@@ -826,7 +716,7 @@ slides:
   kind: code
   accent: '#107C10'
   title: Renovate — the scoped spike config
-  caption: Run via renovatebot/github-action; decide on PR-volume merits
+  caption: Phase 0 · Run via renovatebot/github-action; decide on PR-volume merits
   file: 'Proposed (spike): renovate.json'
   code: |2
 
@@ -842,6 +732,128 @@ slides:
       ]
     }
   notes: 'If the spike runs, this is its shape: one config across ecosystems, a stability window, auto-merge for minor and patch, and the torch pin preserved. Run through the Action, not the app, so there is no approval barrier. Auto-detection handles our ecosystems; only the custom pins and groups need translating, a few hours of work. Then decide on the merits — does it cut pull-request volume without losing the security lane.'
+- id: these-are-production-contracts-not-toy-configs
+  kind: code
+  accent: '#0078D4'
+  title: These are production contracts, not toy configs
+  caption: Phase 1 · e.g. the AzureML job contract for an Isaac Lab GPU training container
+  file: training/rl/workflows/azureml/train.yaml
+  code: |2
+
+    environment_variables:
+      PYTHON: /workspace/isaaclab/isaaclab.sh -p
+      ACCEPT_EULA: "Y"
+      PRIVACY_CONSENT: "Y"
+      HYDRA_FULL_ERROR: "1"
+      TRAINING_CHECKPOINT_OUTPUT: ${{outputs.checkpoints}}
+      # Do NOT add ${{outputs.X}} env vars here — AzureML does not
+      # substitute template expressions in environment_variables
+      # (only inside command:). Training reads $AZURE_ML_OUTPUT_<NAME>.
+    compute: azureml:gpu-cluster
+    environment: azureml:isaaclab-training-env:latest
+  notes: Two surfaces can break, not one. This is the AzureML job contract for an Isaac training container — the runtime wrapper, the mandatory EULA, the checkpoint behavior. A dependency bump can break the container's runtime packaging, caught by import smoke, or the submission contract that renders this YAML, caught by config-preview, or on-device execution, caught only by the GPU tier. Different tests catch each; that is why the gate is layered.
+- id: tier-1-one-image-per-job-disk-gated
+  kind: code
+  accent: '#0078D4'
+  title: Tier 1 — one image per job, disk-gated
+  caption: Phase 1 · Disk is the binding constraint, not capability
+  file: smoke-environments.yml
+  code: |2
+
+    # one image per job (can't co-resident 18+18+9 GB) · path-gated
+    matrix:
+      - {dir: training/rl,         image: isaac-lab:2.3.2}          # on training/rl/**
+      - {dir: training/il/lerobot, image: pytorch:2.11.0-cuda12.8}  # on training/il/**
+      - {dir: evaluation,          image: <build Dockerfile.lerobot-eval>}
+    steps:
+      - uses: jlumbroso/free-disk-space@<sha>   # Isaac ~18-22 GB unpacked
+      - run: docker system prune -af            # between matrix legs
+  code_size: 12
+  notes: Tier one's honest constraint is disk. Isaac unpacks to around twenty gigabytes, the PyTorch image another fifteen, the eval image seven to nine — they cannot co-reside even after a free-disk step. So it is one image per matrix job, pruned between legs, path-gated to the environment whose dependencies actually moved. The secondary cost, pull time, a nightly cache warm-up absorbs.
+- id: a-small-refactor-widens-the-isaac-smoke
+  kind: code
+  accent: '#107C10'
+  title: A small refactor widens the Isaac smoke
+  caption: Phase 1 · Move AppLauncher into main() — like skrl already does (with real acceptance criteria)
+  file: training/rl/scripts/rsl_rl/train.py
+  code: |2
+
+    # training/rl/scripts/rsl_rl/train.py — a small refactor widens CPU smoke
+    # BEFORE (module top level): even `--help` needs a GPU
+    app_launcher = AppLauncher(args_cli)        # <- runs at import
+
+    # AFTER: guard it in main() (like skrl_training.py already does)
+    def main():
+        app_launcher = AppLauncher(args_cli)    # GPU only when actually run
+    # Acceptance: imports on CPU · --help exits pre-AppLauncher · argv preserved
+    #   · GPU launch + Hydra/MLflow side-effects unchanged · covered by a test
+  code_size: 12.5
+  notes: 'One small repository change deepens the Isaac smoke. Today the RSL launcher builds the Isaac AppLauncher at module top level, so the file cannot be imported or show help without a GPU. Moving that call into a main function, as the SKRL script already does, makes the module importable on a CPU agent. It is small, but it is not zero: it needs acceptance criteria — imports on CPU, help exits before the launcher, argument order preserved, GPU behavior unchanged, and a test to hold all of that.'
+- id: smoke-operating-cost-and-the-fail-safe-gate
+  kind: code
+  accent: '#107C10'
+  title: Smoke operating cost and the fail-safe gate
+  caption: Phase 1 · Who owns it, what it costs to run, and why a skip can't pass as green
+  file: 'Proposed: pr-smoke-summary'
+  code: |2
+
+    # Fail-safe path gate: the required check ALWAYS runs and is never 'skipped'.
+    jobs:
+      changes:                     # detect which areas moved (this job is tested)
+        outputs: { rl: ..., il: ..., lock: ... }
+      smoke-rl:
+        needs: changes
+        if: needs.changes.outputs.rl == 'true' || needs.changes.outputs.lock == 'true'
+      pr-smoke-summary:            # the ONE required check for branch protection
+        needs: [changes, smoke-rl, smoke-il]
+        if: always()               # never 'skipped' -> a skip can't masquerade as green
+        run: |                     # any lockfile change forces the heavy legs;
+          [ "$rl" = success ] || [ "$rl_skipped_ok" ] || exit 1   # a wrongly-skipped leg FAILS
+  code_size: 12
+  notes: 'A new gate has running costs, so own them explicitly. The smoke tier''s runtime is minutes; its known flakes are image-pull timeouts and free-disk fragility, triaged by a re-run and a cache; an owner watches schema drift as images change. And the fail-safe pattern is the heart of it: the required summary always runs, never reports skipped, and a wrongly-skipped heavy leg fails the check rather than passing silently — which is exactly what bit this repo in six-ninety-one and five-forty-seven.'
+- id: the-case-economics-objections-alternatives
+  kind: section
+  part: Appendix C
+  title: The case — economics, objections, alternatives
+  sub: Why it pays, the pushback answered, and the paths we rejected
+  notes: 'Appendix C is the argument around the recommendation: the economics that justify the cheap phases, the objections a skeptic will raise, the alternatives we rejected, and the mandate behind the work.'
+- id: economics-the-toil-being-priced-out
+  kind: deflist
+  accent: '#0078D4'
+  title: Economics — the toil being priced out
+  caption: 'Order-of-magnitude, to compare against the status quo (confidence: moderate)'
+  label_w: 3.4
+  label_size: 13.5
+  desc_size: 13
+  rows:
+  - - Volume
+    - ~24 dependency PRs/week (~350 opened, ~216 merged all-time)
+  - - Reviewer toil
+    - ~24 PRs × a few minutes triage + rebase comments each week
+  - - Phase 0+2 saves
+    - batching + patch auto-merge removes most trivial PRs from the queue
+  - - Status quo cost
+    - ~8 runtime incidents over the window; mean time-to-diagnose in hours
+  notes: The case for the cheap phases is also economic. Two dependency pull requests a day, most trivial, each costing reviewer minutes. Batching and patch auto-merge take most of that queue away. Set against the status quo — eight runtime incidents over the window, each taking hours to diagnose — the configuration phases pay for themselves immediately, before any GPU spend.
+- id: anticipated-objections
+  kind: deflist
+  accent: '#9D5D00'
+  title: Anticipated objections
+  label_w: 4.2
+  label_size: 13
+  desc_size: 12.5
+  rows:
+  - - Won't auto-merge cause incidents?
+    - patch-only, dev/docs/actions, no runtime/GPU pkgs, no security batch, checks green, instant revert
+  - - Why not just pin Python everywhere?
+    - necessary but insufficient — pins don't exercise real-image installs, transitive ABI, or CUDA/MIG
+  - - Why not replace Dependabot now?
+    - native grouping covers most of it; the Renovate App is niche in MSFT OSS — spike first
+  - - Why not GPU on every PR?
+    - cost, plus running fork code on a GPU runner; gate + submit-and-poll instead
+  - - Is emulated-amd64 proof representative?
+    - enough for interpreter/marker breaks; final confidence needs a native amd64 runner
+  notes: The objections a skeptical maintainer will raise, answered. Auto-merge is safe because it is scoped to patches in non-runtime areas with an instant revert. Pinning Python is necessary but not sufficient — it does not exercise a real image install or device execution. Replacing Dependabot now is premature when grouping is native and Renovate is a minority tool here. GPU on every pull request is too costly and unsafe for forks. And the prototype, run under emulation, is enough to prove the interpreter class, though a native runner would harden the final confidence.
 - id: alternatives-considered-and-rejected
   kind: bullets
   accent: '#9D5D00'

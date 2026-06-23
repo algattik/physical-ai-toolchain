@@ -864,10 +864,10 @@ SLIDES = [
      "sub": "Appendix follows: primers, prototype detail, costs, and alternatives",
      "notes": "That is the case: the regressions are real and runtime-specific, four controls ship now for almost nothing, and the GPU capstone is designed and waiting on a budget number. The appendix has the primers, the prototype detail, the economics, and the rejected alternatives. I will stop there."},
 
-    # ================= APPENDIX =================
-    {"kind": "section", "part": "Appendix", "title": "Reference and backup",
-     "sub": "Tool primers, prototype mechanics, economics, and alternatives",
-     "notes": "Reference material for questions: the tool primers, the deeper smoke mechanics, the cost model, and the alternatives we weighed."},
+    # ================= APPENDIX A: PRIMERS & GLOSSARY =================
+    {"kind": "section", "part": "Appendix A", "title": "Primers & glossary",
+     "sub": "The tool concepts referenced throughout \u2014 pull up on demand",
+     "notes": "Appendix A is the tool primers and the glossary: the concepts the talk leans on, here for anyone who wants the definition behind a term."},
 
     {"kind": "primer", "accent": BLUE, "title": "Primer \u2014 Dependabot",
      "body": "Dependabot has TWO independent update streams: scheduled VERSION updates (configured in `dependabot.yml`) and always-on, advisory-driven SECURITY updates (automatic \u2014 no config needed). Security PRs are never batched behind version updates. `groups:` batches, `ignore:` pins, `open-pull-requests-limit` caps noise, `cooldown` adds a stability window. It regenerates lockfiles natively.",
@@ -921,37 +921,45 @@ SLIDES = [
      ],
      "notes": "A glossary to leave up for reference \u2014 the terms used through the talk, each in a line. Not read aloud."},
 
+    # ================= APPENDIX B: PHASE MECHANICS (Phase 0 -> 1) =================
+    {"kind": "section", "part": "Appendix B", "title": "Phase mechanics",
+     "sub": "How each recommendation works in detail \u2014 ordered Phase 0 \u2192 Phase 1",
+     "notes": "Appendix B is the mechanics behind the phase recommendations, in running order: first the Phase 0 dependency-intake detail, then the Phase 1 smoke-gate detail."},
+
+    {"kind": "code", "accent": AMBER, "title": "Renovate \u2014 adoption across Microsoft OSS",
+     "caption": "Phase 0 \u00b7 We checked directly \u2014 it shapes the approval friction",
+     "file": "evidence: Sourcegraph + file fetches", "code": RENOVATE_ADOPTION, "code_size": 12,
+     "notes": "Because adoption determines approval friction, we measured it. Dependabot is the de-facto standard across Microsoft open source. Renovate appears in roughly nineteen org repositories, mostly one Visual Studio team sharing a preset; one in Azure, about nine in dotnet, zero in the GitHub org, and the open-source program page names only GitHub-native features. So the hosted app is a minority, team-scoped path \u2014 but the self-hosted Action sidesteps the approval entirely."},
+
+    {"kind": "code", "accent": GREEN, "title": "Renovate \u2014 the scoped spike config",
+     "caption": "Phase 0 \u00b7 Run via renovatebot/github-action; decide on PR-volume merits",
+     "file": "Proposed (spike): renovate.json", "code": C_RENOVATE,
+     "notes": "If the spike runs, this is its shape: one config across ecosystems, a stability window, auto-merge for minor and patch, and the torch pin preserved. Run through the Action, not the app, so there is no approval barrier. Auto-detection handles our ecosystems; only the custom pins and groups need translating, a few hours of work. Then decide on the merits \u2014 does it cut pull-request volume without losing the security lane."},
+
     {"kind": "code", "accent": BLUE, "title": "These are production contracts, not toy configs",
-     "caption": "e.g. the AzureML job contract for an Isaac Lab GPU training container",
+     "caption": "Phase 1 \u00b7 e.g. the AzureML job contract for an Isaac Lab GPU training container",
      "file": "training/rl/workflows/azureml/train.yaml", "code": C_AML_ENV,
      "notes": "Two surfaces can break, not one. This is the AzureML job contract for an Isaac training container \u2014 the runtime wrapper, the mandatory EULA, the checkpoint behavior. A dependency bump can break the container's runtime packaging, caught by import smoke, or the submission contract that renders this YAML, caught by config-preview, or on-device execution, caught only by the GPU tier. Different tests catch each; that is why the gate is layered."},
 
     {"kind": "code", "accent": BLUE, "title": "Tier 1 \u2014 one image per job, disk-gated",
-     "caption": "Disk is the binding constraint, not capability",
+     "caption": "Phase 1 \u00b7 Disk is the binding constraint, not capability",
      "file": "smoke-environments.yml", "code": C_TIER_MATRIX, "code_size": 12,
      "notes": "Tier one's honest constraint is disk. Isaac unpacks to around twenty gigabytes, the PyTorch image another fifteen, the eval image seven to nine \u2014 they cannot co-reside even after a free-disk step. So it is one image per matrix job, pruned between legs, path-gated to the environment whose dependencies actually moved. The secondary cost, pull time, a nightly cache warm-up absorbs."},
 
     {"kind": "code", "accent": GREEN, "title": "A small refactor widens the Isaac smoke",
-     "caption": "Move AppLauncher into main() \u2014 like skrl already does (with real acceptance criteria)",
+     "caption": "Phase 1 \u00b7 Move AppLauncher into main() \u2014 like skrl already does (with real acceptance criteria)",
      "file": "training/rl/scripts/rsl_rl/train.py", "code": C_RSL_REFACTOR, "code_size": 12.5,
      "notes": "One small repository change deepens the Isaac smoke. Today the RSL launcher builds the Isaac AppLauncher at module top level, so the file cannot be imported or show help without a GPU. Moving that call into a main function, as the SKRL script already does, makes the module importable on a CPU agent. It is small, but it is not zero: it needs acceptance criteria \u2014 imports on CPU, help exits before the launcher, argument order preserved, GPU behavior unchanged, and a test to hold all of that."},
 
-
     {"kind": "code", "accent": GREEN, "title": "Smoke operating cost and the fail-safe gate",
-     "caption": "Who owns it, what it costs to run, and why a skip can't pass as green",
+     "caption": "Phase 1 \u00b7 Who owns it, what it costs to run, and why a skip can't pass as green",
      "file": "Proposed: pr-smoke-summary", "code": C_FAILSAFE, "code_size": 12,
      "notes": "A new gate has running costs, so own them explicitly. The smoke tier's runtime is minutes; its known flakes are image-pull timeouts and free-disk fragility, triaged by a re-run and a cache; an owner watches schema drift as images change. And the fail-safe pattern is the heart of it: the required summary always runs, never reports skipped, and a wrongly-skipped heavy leg fails the check rather than passing silently \u2014 which is exactly what bit this repo in six-ninety-one and five-forty-seven."},
 
-    {"kind": "deflist", "accent": AMBER, "title": "Anticipated objections",
-     "label_w": 4.2, "label_size": 13, "desc_size": 12.5,
-     "rows": [
-         ("Won't auto-merge cause incidents?", "patch-only, dev/docs/actions, no runtime/GPU pkgs, no security batch, checks green, instant revert"),
-         ("Why not just pin Python everywhere?", "necessary but insufficient \u2014 pins don't exercise real-image installs, transitive ABI, or CUDA/MIG"),
-         ("Why not replace Dependabot now?", "native grouping covers most of it; the Renovate App is niche in MSFT OSS \u2014 spike first"),
-         ("Why not GPU on every PR?", "cost, plus running fork code on a GPU runner; gate + submit-and-poll instead"),
-         ("Is emulated-amd64 proof representative?", "enough for interpreter/marker breaks; final confidence needs a native amd64 runner"),
-     ],
-     "notes": "The objections a skeptical maintainer will raise, answered. Auto-merge is safe because it is scoped to patches in non-runtime areas with an instant revert. Pinning Python is necessary but not sufficient \u2014 it does not exercise a real image install or device execution. Replacing Dependabot now is premature when grouping is native and Renovate is a minority tool here. GPU on every pull request is too costly and unsafe for forks. And the prototype, run under emulation, is enough to prove the interpreter class, though a native runner would harden the final confidence."},
+    # ================= APPENDIX C: THE CASE =================
+    {"kind": "section", "part": "Appendix C", "title": "The case \u2014 economics, objections, alternatives",
+     "sub": "Why it pays, the pushback answered, and the paths we rejected",
+     "notes": "Appendix C is the argument around the recommendation: the economics that justify the cheap phases, the objections a skeptic will raise, the alternatives we rejected, and the mandate behind the work."},
 
     {"kind": "deflist", "accent": BLUE, "title": "Economics \u2014 the toil being priced out",
      "caption": "Order-of-magnitude, to compare against the status quo (confidence: moderate)",
@@ -964,15 +972,16 @@ SLIDES = [
      ],
      "notes": "The case for the cheap phases is also economic. Two dependency pull requests a day, most trivial, each costing reviewer minutes. Batching and patch auto-merge take most of that queue away. Set against the status quo \u2014 eight runtime incidents over the window, each taking hours to diagnose \u2014 the configuration phases pay for themselves immediately, before any GPU spend."},
 
-    {"kind": "code", "accent": AMBER, "title": "Renovate \u2014 adoption across Microsoft OSS",
-     "caption": "We checked directly \u2014 it shapes the approval friction",
-     "file": "evidence: Sourcegraph + file fetches", "code": RENOVATE_ADOPTION, "code_size": 12,
-     "notes": "Because adoption determines approval friction, we measured it. Dependabot is the de-facto standard across Microsoft open source. Renovate appears in roughly nineteen org repositories, mostly one Visual Studio team sharing a preset; one in Azure, about nine in dotnet, zero in the GitHub org, and the open-source program page names only GitHub-native features. So the hosted app is a minority, team-scoped path \u2014 but the self-hosted Action sidesteps the approval entirely."},
-
-    {"kind": "code", "accent": GREEN, "title": "Renovate \u2014 the scoped spike config",
-     "caption": "Run via renovatebot/github-action; decide on PR-volume merits",
-     "file": "Proposed (spike): renovate.json", "code": C_RENOVATE,
-     "notes": "If the spike runs, this is its shape: one config across ecosystems, a stability window, auto-merge for minor and patch, and the torch pin preserved. Run through the Action, not the app, so there is no approval barrier. Auto-detection handles our ecosystems; only the custom pins and groups need translating, a few hours of work. Then decide on the merits \u2014 does it cut pull-request volume without losing the security lane."},
+    {"kind": "deflist", "accent": AMBER, "title": "Anticipated objections",
+     "label_w": 4.2, "label_size": 13, "desc_size": 12.5,
+     "rows": [
+         ("Won't auto-merge cause incidents?", "patch-only, dev/docs/actions, no runtime/GPU pkgs, no security batch, checks green, instant revert"),
+         ("Why not just pin Python everywhere?", "necessary but insufficient \u2014 pins don't exercise real-image installs, transitive ABI, or CUDA/MIG"),
+         ("Why not replace Dependabot now?", "native grouping covers most of it; the Renovate App is niche in MSFT OSS \u2014 spike first"),
+         ("Why not GPU on every PR?", "cost, plus running fork code on a GPU runner; gate + submit-and-poll instead"),
+         ("Is emulated-amd64 proof representative?", "enough for interpreter/marker breaks; final confidence needs a native amd64 runner"),
+     ],
+     "notes": "The objections a skeptical maintainer will raise, answered. Auto-merge is safe because it is scoped to patches in non-runtime areas with an instant revert. Pinning Python is necessary but not sufficient \u2014 it does not exercise a real image install or device execution. Replacing Dependabot now is premature when grouping is native and Renovate is a minority tool here. GPU on every pull request is too costly and unsafe for forks. And the prototype, run under emulation, is enough to prove the interpreter class, though a native runner would harden the final confidence."},
 
     {"kind": "bullets", "accent": AMBER, "title": "Alternatives considered and rejected",
      "body": "- A custom bot replacing Dependabot \u2014 reinvents native grouping; high upkeep\n- Immediate Renovate via the Mend App \u2014 niche in MSFT OSS; approval friction\n- pull_request_target + PR-head checkout for fork creds \u2014 the classic pwn request\n- GPU on every PR / self-hosted runner running PR code \u2014 too costly and risky unfunded\n- Pin Python everywhere and stop \u2014 necessary but doesn't exercise real installs or device ABI",
