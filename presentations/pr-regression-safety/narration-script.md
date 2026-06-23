@@ -92,7 +92,7 @@ The toil is concentrated in the safe path. Dependabot cannot merge its own pull 
 
 ## Slide 23 — Recommendation — auto-merge, scoped tight
 
-Auto-merge the trivially safe, and only that — no agent, no inference. Dependabot's fetch-metadata action reads the update type without running the pull request's code; for a development patch it enables auto-merge, which waits for the required checks. The natural objection — won't this cause incidents — is answered by scope: patch-only at first, development and docs and actions only, never a runtime or GPU package, never a security pull request, required checks green, and an instant-revert playbook. Everything riskier stays in scoped manual review.
+Auto-merge the trivially safe, and only that — no agent, no inference, and no bypass of CI. The key is what `--auto` does: it does not merge on the spot, it queues the pull request and merges only once the required checks are green — the same fail-safe smoke gate every other pull request clears. Dependabot's fetch-metadata action reads the update type without running the pull request's code; for a development patch it enables that gated auto-merge. The natural objection — won't this slip an untested change in — is answered twice over: the gate still has to pass, and the scope is deliberately narrow. Patch-only at first, development and docs and actions only, never a runtime or GPU package, never a security pull request. A semver-minor bump falls outside the filter and still gets manual review. Everything riskier stays in scoped manual review, with an instant-revert playbook behind it.
 
 ## Slide 24 — Gated GPU end-to-end — the capstone
 
