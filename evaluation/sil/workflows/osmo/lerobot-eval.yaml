@@ -99,7 +99,7 @@ workflow:
             # Install MLflow and matplotlib when MLflow tracking is enabled
             if [[ "${MLFLOW_ENABLE:-false}" == "true" ]]; then
               echo "Installing MLflow and plotting dependencies..."
-              uv pip install azureml-mlflow "mlflow>=2.8.0,<3.0.0" matplotlib --system
+              uv pip install azureml-mlflow==1.62.0.post3 "mlflow==2.22.5" matplotlib==3.11.0 --system
             fi
 
             # Download model from AzureML registry if specified
@@ -180,7 +180,7 @@ workflow:
             # Download dataset from Azure Blob Storage if configured
             if [[ -n "${BLOB_STORAGE_ACCOUNT:-}" && -n "${BLOB_PREFIX:-}" ]]; then
               echo "Installing Azure storage dependencies..."
-              uv pip install azure-storage-blob azure-identity --system
+              uv pip install azure-storage-blob==12.27.1 azure-identity==1.25.3 --system
 
               echo "Downloading dataset from Azure Blob: ${BLOB_STORAGE_ACCOUNT}/${BLOB_STORAGE_CONTAINER}/${BLOB_PREFIX}..."
 
