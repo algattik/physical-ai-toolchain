@@ -14,6 +14,9 @@ workflow:
       command:
         - /bin/bash
         - /tmp/entry.sh
+      inputs:
+        - url: "{{ code_url }}"
+          regex: ".*"
       credentials:
         huggingface:
           HF_TOKEN: hf_token
@@ -42,7 +45,6 @@ workflow:
         BLOB_STORAGE_ACCOUNT: "{{ blob_storage_account }}"
         BLOB_STORAGE_CONTAINER: "{{ blob_storage_container }}"
         BLOB_PREFIX: "{{ blob_prefix }}"
-        ENCODED_ARCHIVE: "{{ encoded_archive }}"
         PAYLOAD_ROOT: "{{ payload_root }}"
       files:
         - path: /tmp/entry.sh
@@ -76,15 +78,19 @@ workflow:
             echo "Installing UV package manager..."
             pip install --quiet uv==0.7.12
 
-            # Unpack runtime payload and install dependencies from workflow manifest
-            ARCHIVE_PATH="/tmp/lerobot_payload.zip"
+            # Unpack runtime payload and install dependencies from workflow manifest.
+            # Code is delivered via the OSMO url: input (object storage), not an
+            # env var: a single env string is capped at 128 KiB (MAX_ARG_STRLEN)
+            # and the archive (which ships the lerobot uv.lock for `uv export`)
+            # exceeds that, failing the container execve E2BIG.
             PAYLOAD_ROOT="${PAYLOAD_ROOT:-/workspace/lerobot_payload}"
             mkdir -p "${PAYLOAD_ROOT}"
-            if [[ -z "${ENCODED_ARCHIVE:-}" ]]; then
-              echo "ERROR: ENCODED_ARCHIVE is not set or empty; runtime payload is required." >&2
+            ARCHIVE_PATH="$(find {{input:0}} -maxdepth 2 -name '*.zip' | head -n1)"
+            if [[ -z "${ARCHIVE_PATH}" || ! -s "${ARCHIVE_PATH}" ]]; then
+              echo "ERROR: no code archive found under the input mount; runtime payload is required." >&2
+              ls -laR {{input:0}} || true
               exit 1
             fi
-            printf '%s' "${ENCODED_ARCHIVE}" | base64 -d > "${ARCHIVE_PATH}"
             unzip -oq "${ARCHIVE_PATH}" -d "${PAYLOAD_ROOT}"
             export PYTHONPATH="${PAYLOAD_ROOT}:${PYTHONPATH:-}"
 
@@ -857,5 +863,5 @@ default-values:
   blob_storage_account: ""
   blob_storage_container: datasets
   blob_prefix: ""
-  encoded_archive: ""
+  code_url: ""
   payload_root: /workspace/lerobot_payload

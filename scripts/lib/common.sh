@@ -82,6 +82,63 @@ activate_local_osmo() {
   export -f osmo
 }
 
+# Package repo-relative paths into a zip, upload it to a unique OSMO data URI,
+# and echo that URI for a workflow `url:` input to consume.
+#
+# The payload is delivered to the workflow pod as a downloaded object (via the
+# pod's workload identity) rather than an inline base64 env var: a single env
+# string is capped at 128 KiB (Linux MAX_ARG_STRLEN) and the payload exceeds
+# that, which fails the container execve with E2BIG.
+#
+# All progress logs go to stderr; only the URI is printed to stdout.
+# Usage: code_url=$(stage_and_upload_code <repo_root> <uri_base> <path>...)
+stage_and_upload_code() {
+  local repo_root="${1:?repo_root required}"
+  local uri_base="${2:?uri_base required}"
+  shift 2
+  [[ $# -gt 0 ]] || { error "stage_and_upload_code: no paths to package"; return 1; }
+
+  local tmp archive hash uri size
+  tmp="$(mktemp -d)"
+  archive="$tmp/osmo-code.zip"
+
+  if ! (cd "$repo_root" && zip -qr "$archive" "$@" \
+    -x '**/__pycache__/*' \
+    -x '*.pyc' \
+    -x '*.pyo' \
+    -x '**/.pytest_cache/*' \
+    -x '**/.mypy_cache/*' \
+    -x '**/*.egg-info/*' \
+    -x '**/.git/*' \
+    -x '**/node_modules/*' \
+    -x '**/.venv/*' \
+    -x '**/.tmp/*') >&2; then
+    rm -rf "$tmp"
+    error "Failed to build code archive"
+    return 1
+  fi
+
+  if [[ ! -s "$archive" ]]; then
+    rm -rf "$tmp"
+    error "Code archive is empty"
+    return 1
+  fi
+
+  size="$(wc -c < "$archive" | tr -d ' ')"
+  hash="$(calculate_sha256 "$archive" | cut -c1-16)"
+  uri="${uri_base}/${hash}"
+
+  info "Uploading code archive (${size} bytes) to ${uri}" >&2
+  if ! osmo data upload "$uri" "$archive" >&2; then
+    rm -rf "$tmp"
+    error "osmo data upload failed for ${uri}"
+    return 1
+  fi
+
+  rm -rf "$tmp"
+  echo "$uri"
+}
+
 # Ensure Azure CLI extension is installed
 require_az_extension() {
   local ext="${1:?extension name required}"
