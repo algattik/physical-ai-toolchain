@@ -115,6 +115,20 @@ Select the architecture with `--policy-type`:
 | `--mixed-precision`        | `no`                                                 | Accelerate mixed-precision mode (`no`/`fp16`/`bf16`); effective with more than one visible GPU                  |
 | `--platform`               | `gpu_platform`                                       | OSMO platform binding the GPU node pool; use `gpu_platform_2x` for 2x A100 nodes with `--num-gpus 2`; OSMO only |
 
+### Multi-GPU Training (OSMO)
+
+Single-node multi-GPU training launches `accelerate` with one process per visible GPU. Request the GPU count with `--num-gpus` and select a `--platform` whose node pool exposes at least that many GPUs:
+
+```bash
+./scripts/submit-osmo-lerobot-training.sh \
+  -d user/my-dataset \
+  --num-gpus 2 \
+  --platform gpu_platform_2x \
+  --mixed-precision bf16
+```
+
+The cluster must provide a node pool with a multi-GPU SKU and a matching OSMO platform; the shipped `gpu_platform_2x` binds a 2x A100 pool. Mixed precision only takes effect when more than one GPU is visible. See [Manage Node Pools](../infrastructure/manage-node-pools.md) to add multi-GPU pools and platforms.
+
 ### Fine-Tuning from Existing Policy
 
 ```bash
