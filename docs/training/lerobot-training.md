@@ -3,7 +3,7 @@ sidebar_position: 5
 title: LeRobot Training
 description: Behavioral cloning training with ACT and Diffusion policies on Azure ML and OSMO platforms
 author: Microsoft Robotics-AI Team
-ms.date: 2026-05-26
+ms.date: 2026-06-24
 ms.topic: how-to
 keywords:
   - lerobot
@@ -99,18 +99,21 @@ Select the architecture with `--policy-type`:
 
 ## ⚙️ Training Configuration
 
-| Parameter                  | Default                                              | Description                                                                           |
-|----------------------------|------------------------------------------------------|---------------------------------------------------------------------------------------|
-| `--dataset-repo-id`        | Required for HuggingFace; `dataset` for Blob sources | HuggingFace dataset repository or logical local dataset name                      |
-| `--blob-url`               | (none)                                               | Direct Azure Blob dataset URL; repeat for multiple sources                            |
-| `--policy-type`            | `act`                                                | Policy: `act`, `diffusion`                                               , or `groot` |
-| `--job-name`               | `lerobot-act-training`                               | Job identifier                                                                        |
-| `--image`                  | `pytorch/pytorch:2.11.0-cuda12.8-cudnn9-runtime`     | Container image                                                                       |
-| `--training-steps`         | `100000`                                             | Total training iterations                                                             |
-| `--batch-size`             | `32`                                                 | Training batch size                                                                   |
-| `--save-freq`              | `5000`                                               | Checkpoint save frequency                                                             |
-| `--policy-repo-id`         | (none)                                               | Pre-trained policy for fine-tuning                                                    |
-| `--init-from-policy-model` | (none)                                               | Warm-start from a registered AzureML model (`azureml:NAME:VERSION`); AzureML only |
+| Parameter                  | Default                                              | Description                                                                                                     |
+|----------------------------|------------------------------------------------------|-----------------------------------------------------------------------------------------------------------------|
+| `--dataset-repo-id`        | Required for HuggingFace; `dataset` for Blob sources | HuggingFace dataset repository or logical local dataset name                                                    |
+| `--blob-url`               | (none)                                               | Direct Azure Blob dataset URL; repeat for multiple sources                                                      |
+| `--policy-type`            | `act`                                                | Policy: `act`, `diffusion`                                               , or `groot`                           |
+| `--job-name`               | `lerobot-act-training`                               | Job identifier                                                                                                  |
+| `--image`                  | `pytorch/pytorch:2.11.0-cuda12.8-cudnn9-runtime`     | Container image                                                                                                 |
+| `--training-steps`         | `100000`                                             | Total training iterations                                                                                       |
+| `--batch-size`             | `32`                                                 | Training batch size                                                                                             |
+| `--save-freq`              | `5000`                                               | Checkpoint save frequency                                                                                       |
+| `--policy-repo-id`         | (none)                                               | Pre-trained policy for fine-tuning                                                                              |
+| `--init-from-policy-model` | (none)                                               | Warm-start from a registered AzureML model (`azureml:NAME:VERSION`); AzureML only                               |
+| `--num-gpus`               | `1`                                                  | GPUs requested per task; enables Accelerate multi-GPU launch when >1; OSMO only                                 |
+| `--mixed-precision`        | `no`                                                 | Accelerate mixed-precision mode (`no`/`fp16`/`bf16`); effective with more than one visible GPU                  |
+| `--platform`               | `gpu_platform`                                       | OSMO platform binding the GPU node pool; use `gpu_platform_2x` for 2x A100 nodes with `--num-gpus 2`; OSMO only |
 
 ### Fine-Tuning from Existing Policy
 
