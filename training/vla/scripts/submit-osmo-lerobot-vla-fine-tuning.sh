@@ -201,7 +201,7 @@ done
 
 [[ "$use_local_osmo" == "true" ]] && activate_local_osmo
 
-require_tools osmo
+require_tools osmo base64
 
 workflow="${workflow:-$REPO_ROOT/training/vla/workflows/osmo/groot-train.yaml}"
 
@@ -316,6 +316,23 @@ fi
 # Build Submission Command
 #------------------------------------------------------------------------------
 
+# The training logic lives in a lintable, version-controlled shell script rather
+# than inline in the workflow YAML. Inject it as a base64 template variable; the
+# workflow decodes it to /tmp/train.sh in the task container.
+train_script="$REPO_ROOT/training/vla/scripts/groot-train.sh"
+[[ -f "$train_script" ]] || fatal "Training script not found: $train_script"
+train_script_b64="$(base64 < "$train_script" | tr -d '\n')"
+
+# The pinned dependency set (pyproject.toml + uv.lock) is the single
+# Dependabot-tracked surface. Inject both so the training script can derive and
+# install the runtime dependencies from the committed resolution with --no-deps.
+pyproject_file="$REPO_ROOT/training/vla/pyproject.toml"
+uv_lock_file="$REPO_ROOT/training/vla/uv.lock"
+[[ -f "$pyproject_file" ]] || fatal "pyproject.toml not found: $pyproject_file"
+[[ -f "$uv_lock_file" ]] || fatal "uv.lock not found: $uv_lock_file"
+pyproject_b64="$(base64 < "$pyproject_file" | tr -d '\n')"
+uv_lock_b64="$(base64 < "$uv_lock_file" | tr -d '\n')"
+
 submit_args=(
   workflow submit "$workflow"
   --set-string "image=$image"
@@ -334,6 +351,9 @@ submit_args=(
   "resume=$resume"
   "azure_upload=$azure_upload"
   "azureml_model_name=$azureml_model_name"
+  "train_script_b64=$train_script_b64"
+  "pyproject_b64=$pyproject_b64"
+  "uv_lock_b64=$uv_lock_b64"
 )
 
 [[ -n "$run_id_override" ]]  && submit_args+=("run_id_override=$run_id_override")

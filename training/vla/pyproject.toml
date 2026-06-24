@@ -1,0 +1,97 @@
+[project]
+name = "robotics-training-vla"
+version = "0.1.0"
+description = "GR00T N1.7 VLA fine-tuning runtime dependencies"
+# GR00T N1.7 pins exactly Python 3.10; the prebuilt flash-attn wheel below is
+# cp310 only. This constraint is lifted only when NVIDIA bumps Isaac-GR00T's
+# requires-python (track via the ISAAC_GROOT_REF in the OSMO workflow).
+requires-python = "==3.10.*"
+# GR00T's own dependencies are inlined here (pinned) rather than installed from
+# the upstream git checkout, because uv cannot lock Isaac-GR00T as a git
+# dependency: its pyproject declares `[tool.uv.sources]` entries pointing at
+# wheel files bundled inside the repo, which uv forbids for transitive git
+# dependencies. Inlining the resolved set lets uv produce a full lock (so
+# Dependabot sees and patches every transitive package) while GR00T's own source
+# is installed separately with `pip install -e . --no-deps` at job runtime.
+#
+# Coupling: this list mirrors the x86_64 subset of Isaac-GR00T's pyproject at
+# the ISAAC_GROOT_REF pinned for --vla-version 1.7. When that ref is bumped,
+# re-copy GR00T's `dependencies` and regenerate the lock (see below). tensorrt
+# is intentionally omitted: it is a TensorRT-export/deploy dependency, not used
+# by fine-tuning, and its PyPI distribution is a network-download stub that
+# cannot be resolved off a GPU host.
+#
+# Regenerate the lock on the GR00T target platform (linux x86_64, Python 3.10),
+# never against the host interpreter:
+#   docker run --rm --platform linux/amd64 -v "$PWD/training/vla:/w" -w /w \
+#     python:3.10-slim bash -c 'pip install uv && uv lock'
+dependencies = [
+    "albumentations==1.4.18",
+    "huggingface-hub[cli]",
+    "opencv-python-headless>=4.5,<4.13",
+    "av==16.1.0",
+    "diffusers==0.35.1",
+    "dm-tree",
+    "lmdb==1.7.5",
+    "msgpack==1.1.0",
+    "msgpack-numpy==0.4.8",
+    "pandas==2.2.3",
+    "peft==0.17.1",
+    "termcolor==3.2.0",
+    "torch==2.7.1",
+    "torchvision==0.22.1",
+    "transformers==4.57.3",
+    "tyro==0.9.17",
+    "click==8.1.8",
+    "datasets==3.6.0",
+    "cryptography==42.0.8",
+    "einops==0.8.1",
+    "gitpython==3.1.46",
+    "jsonlines==4.0.0",
+    "gymnasium==1.2.2",
+    "matplotlib==3.10.1",
+    "numpy==1.26.4",
+    "omegaconf==2.3.0",
+    "scipy==1.15.3",
+    "torchcodec==0.4.0",
+    "wandb==0.23.0",
+    "pyzmq==27.0.1",
+    "deepspeed==0.17.6",
+    "flash-attn==2.7.4.post1",
+    "onnx>=1.20.0",
+    # Wrapper dependencies the OSMO workflow layers on top of GR00T for dataset
+    # download, multi-GPU launch, and metrics.
+    "azure-identity==1.25.3",
+    "azure-storage-blob==12.30.0",
+    "gpustat",
+    "accelerate>=0.26.0",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.uv]
+# Constrain the universal lock to the OSMO GPU deployment target so resolution
+# yields a single marker per package, suitable for a build-time `uv export`.
+environments = ["sys_platform == 'linux' and platform_machine == 'x86_64'"]
+package = false
+
+# Replicated from Isaac-GR00T's pyproject because uv does not honor a transitive
+# dependency's own sources/indexes; they must be declared in the consuming
+# project. torch/torchvision come from the CUDA 12.8 index, and flash-attn from
+# its prebuilt wheel so no source build runs during resolution or install.
+[tool.uv.sources]
+torch = [{ index = "pytorch-cu128" }]
+torchvision = [{ index = "pytorch-cu128" }]
+flash-attn = [
+    { url = "https://github.com/Dao-AILab/flash-attention/releases/download/v2.7.4.post1/flash_attn-2.7.4.post1+cu12torch2.7cxx11abiFALSE-cp310-cp310-linux_x86_64.whl" },
+]
+
+[tool.uv.extra-build-dependencies]
+flash-attn = ["torch==2.7.1", "numpy==1.26.4"]
+
+[[tool.uv.index]]
+name = "pytorch-cu128"
+url = "https://download.pytorch.org/whl/cu128"
+explicit = true
