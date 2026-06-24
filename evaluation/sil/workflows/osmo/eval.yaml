@@ -72,7 +72,7 @@ workflow:
               --headless
             )
 
-            bash "${INFERENCE_ROOT}/scripts/infer.sh" "${infer_args[@]}"
+            bash "${INFERENCE_ROOT}/infer.sh" "${infer_args[@]}"
 
 default-values:
   # Submission scripts set image from scripts/lib/common.sh via --set-string.
