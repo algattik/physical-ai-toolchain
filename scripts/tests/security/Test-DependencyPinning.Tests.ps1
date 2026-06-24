@@ -267,6 +267,53 @@ Describe 'Get-ShellInlinePipViolations' -Tag 'Unit' {
     }
 }
 
+Describe 'Get-ShellInlinePipViolations (.sh files)' -Tag 'Unit' {
+    Context 'Compliant shell script' {
+        It 'Returns no violations when every install is pinned, lock-derived, or exempted' {
+            $testFile = Join-Path $script:SecurityFixturesPath 'inline-pip-compliant.sh'
+            $result = @(Get-ShellInlinePipViolations -FileInfo @{ Path = $testFile; Type = 'shell-inline-pip'; RelativePath = 'inline-pip-compliant.sh' })
+            $result | Should -BeNullOrEmpty
+        }
+    }
+
+    Context 'Unpinned shell script' {
+        It 'Flags bare names, ranges, and unpinned uv run --with' {
+            $testFile = Join-Path $script:SecurityFixturesPath 'inline-pip-unpinned.sh'
+            $result = @(Get-ShellInlinePipViolations -FileInfo @{ Path = $testFile; Type = 'shell-inline-pip'; RelativePath = 'inline-pip-unpinned.sh' })
+            $result.Count | Should -Be 3
+            ($result.Name | Sort-Object) | Should -Be @('mlflow', 'requests', 'torch')
+        }
+    }
+
+    Context 'Binary-install false-positive defense' {
+        It 'Does not flag `install ... /usr/local/bin/uvx` (coreutils install, not a package)' {
+            $content = 'sudo install -m 0755 /tmp/uv-x86_64-unknown-linux-gnu/uvx /usr/local/bin/uvx'
+            $tmp = Join-Path $TestDrive 'bininstall.sh'
+            Set-Content -Path $tmp -Value $content
+            $result = @(Get-ShellInlinePipViolations -FileInfo @{ Path = $tmp; Type = 'shell-inline-pip'; RelativePath = 'bininstall.sh' })
+            $result | Should -BeNullOrEmpty
+        }
+    }
+
+    Context 'pinning-ignore directive' {
+        It 'Exempts a same-line marked install but still flags the next line' {
+            $content = "pip install `"numpy>=1.26,<2`"  # pinning-ignore`npip install requests"
+            $tmp = Join-Path $TestDrive 'ignore-sameline.sh'
+            Set-Content -Path $tmp -Value $content
+            $result = @(Get-ShellInlinePipViolations -FileInfo @{ Path = $tmp; Type = 'shell-inline-pip'; RelativePath = 'ignore-sameline.sh' })
+            $result.Name | Should -Be 'requests'
+        }
+
+        It 'Exempts an install preceded by a dedicated pinning-ignore comment line' {
+            $content = "# pinning-ignore: deliberate`npip install `"flask>=2,<3`""
+            $tmp = Join-Path $TestDrive 'ignore-prevline.sh'
+            Set-Content -Path $tmp -Value $content
+            $result = @(Get-ShellInlinePipViolations -FileInfo @{ Path = $tmp; Type = 'shell-inline-pip'; RelativePath = 'ignore-prevline.sh' })
+            $result | Should -BeNullOrEmpty
+        }
+    }
+}
+
 Describe 'Export-ComplianceReport' -Tag 'Unit' {
     BeforeEach {
         $script:TestOutputPath = Join-Path $TestDrive 'report'

@@ -160,11 +160,11 @@ $DependencyPatterns = @{
     }
 
     'shell-inline-pip' = @{
-        FilePatterns   = @('**/workflows/**/*.yaml')
+        FilePatterns   = @('**/workflows/**/*.yaml', '**/*.sh')
         ValidationFunc = 'Get-ShellInlinePipViolations'
         PinPattern     = '^.+==.+'
         RemediationUrl = 'https://pypi.org/pypi/{0}/{1}/json'
-        Description    = 'Inline pip/uv pip installs in workflow YAML must be exact-pinned (==) or lock-derived'
+        Description    = 'Inline pip/uv pip installs in workflow YAML and shell scripts must be exact-pinned (==) or lock-derived'
     }
 }
 
@@ -447,7 +447,8 @@ function Get-ShellInlinePipViolations {
     # Flags that consume the following token as their value
     $valueFlags = @('--index-url', '--extra-index-url', '-i', '--timeout', '--retries',
         '-c', '--constraint', '-r', '--requirement', '--find-links', '-f', '-e',
-        '--editable', '--prefix', '--target', '--index-strategy', '--python-version')
+        '--editable', '--prefix', '--target', '--index-strategy', '--python-version',
+        '--project', '-p')
 
     $lines = Get-Content -Path $filePath
 
@@ -470,7 +471,9 @@ function Get-ShellInlinePipViolations {
     if ($buffer -ne '') { $logicalLines += @{ Text = $buffer; Line = $startLine } }
 
     $installRegex = '(?:uv\s+pip|pip3?|python3?\s+-m\s+pip)\s+install\b'
-    $uvRunRegex = '(?:uvx|uv\s+tool\s+run|uv\s+run)\b'
+    # uv run / uvx / uv tool run, anchored to command position so binary-install
+    # lines like `install /tmp/.../uvx /usr/local/bin/uvx` do not match.
+    $uvRunAnchored = '^(?:sudo\s+)?(?:uvx|uv\s+tool\s+run|uv\s+run)\b'
 
     # Shared compliance check for a single package spec. Emits a violation object
     # (or $null when compliant). Build-frontend tools are allowlisted; exact ==
@@ -500,16 +503,27 @@ function Get-ShellInlinePipViolations {
         $v.Name = $packageName
         $v.Version = $versionSpec
         $v.Severity = 'warning'
-        $v.Description = "Unpinned inline pip dependency in workflow YAML via $source (use ==, -r lockfile, or uv export)"
+        $v.Description = "Unpinned inline pip dependency via $source (use ==, -r/--requirement lockfile, or uv export)"
         $v.Metadata = @{ Format = (Split-Path $filePath -Leaf); LineContent = $cmdText }
         return $v
     }
 
+    $prevWasIgnoreComment = $false
     foreach ($logical in $logicalLines) {
-        if ($logical.Text -notmatch 'install|uv\s+run|uvx|uv\s+tool\s+run') { continue }
+        $lineText = $logical.Text
+        $hasIgnore = $lineText -match 'pinning-ignore'
+
+        # Inline exemption: `# pinning-ignore` trailing the install (or its continued lines),
+        # or a dedicated `# pinning-ignore` comment line directly above the install. Lets an
+        # intentional non-pin opt out of this check (e.g. an Isaac-ABI numpy range).
+        $exempt = $hasIgnore -or $prevWasIgnoreComment
+        $prevWasIgnoreComment = $hasIgnore -and $lineText.TrimStart().StartsWith('#')
+
+        if ($lineText -notmatch 'install|uv\s+run|uvx|uv\s+tool\s+run') { continue }
+        if ($exempt) { continue }
 
         # Split into shell commands on &&, ||, ; (NOT single | so 'uv export | uv pip install' stays intact)
-        $commands = $logical.Text -split '\s*(?:&&|\|\||;)\s*'
+        $commands = $lineText -split '\s*(?:&&|\|\||;)\s*'
 
         foreach ($command in $commands) {
             $cmdTrim = $command.TrimStart()
@@ -539,7 +553,7 @@ function Get-ShellInlinePipViolations {
                     if ($null -ne $result) { $violations += $result }
                 }
             }
-            elseif ($command -match $uvRunRegex) {
+            elseif ($cmdTrim -match $uvRunAnchored) {
                 # uv run / uvx / uv tool run with ephemeral deps: each --with SPEC must be pinned.
                 # --with-requirements FILE is lock-derived (compliant); --with-editable is a local project (compliant).
                 $tokens = [regex]::Matches($command, '"[^"]*"|''[^'']*''|\S+') | ForEach-Object { $_.Value }
@@ -732,6 +746,11 @@ function Get-FilesToScan {
                     }
 
                     $files = Get-ChildItem @gciParams
+
+                    # Always skip vendored / VCS / virtualenv trees (never lint dependencies' own files)
+                    $files = $files | Where-Object {
+                        $_.FullName -notmatch '[/\\](\.git|\.venv|node_modules|external)[/\\]'
+                    }
 
                     # Apply exclusion filters
                     if ($ExcludePatterns) {
