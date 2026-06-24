@@ -8,6 +8,7 @@ workflow:
       cpu: 120
       memory: 480Gi
       storage: 200Gi
+      platform: gpu_platform
   tasks:
     - name: isaac-inference
       image: "{{ image }}"

@@ -8,6 +8,7 @@ workflow:
       cpu: 4
       memory: 32Gi
       storage: 40Gi
+      platform: gpu_platform
   tasks:
     - name: lerobot-eval
       image: "{{ image }}"
