@@ -561,7 +561,7 @@ default-values:
   workflow_name: groot-train
   image: pytorch/pytorch:2.6.0-cuda12.4-cudnn9-devel
   gpu: 1
-  platform: h100gpu_platform
+  platform: gpu_platform
   blob_url: ""
   dataset_path: "/data/dataset"
   data_config: ""
