@@ -195,8 +195,7 @@ workflow:
               fi
             fi
 
-            # Download dataset from Azure Blob Storage if configured. The azure
-            # storage SDKs are already installed from the lerobot lock above.
+            # Download dataset from Azure Blob Storage if configured
             if [[ -n "${BLOB_STORAGE_ACCOUNT:-}" && -n "${BLOB_PREFIX:-}" ]]; then
               echo "Downloading dataset from Azure Blob: ${BLOB_STORAGE_ACCOUNT}/${BLOB_STORAGE_CONTAINER}/${BLOB_PREFIX}..."
 
