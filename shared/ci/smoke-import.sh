@@ -113,17 +113,22 @@ ensure_uv() {
 # CPU mode: fresh CPU-wheel resolve on a standard runner
 #------------------------------------------------------------------------------
 smoke_cpu() {
-    local venv="${REPO_ROOT}/.venv-smoke-${domain}"
+    if [[ "$(uname -s)/$(uname -m)" != "Linux/x86_64" ]]; then
+        fatal "CPU smoke installs the linux/x86_64 lock; on this host run it in Docker: shared/ci/smoke-image.sh ${domain} --mode cpu"
+    fi
+    local venv="/tmp/smoke-venv-${domain}"
     section "CPU import smoke: ${domain}"
-    uv venv --python "$py_version" "$venv"
+    uv venv --clear --python "$py_version" "$venv"
     export VIRTUAL_ENV="$venv"
     export PATH="${venv}/bin:${PATH}"
 
-    # `--torch-backend cpu` redirects the lock's CUDA-pinned torch to CPU wheels.
-    # The `uv export | uv pip install --requirement -` pipe keeps every package
-    # pinned to the committed lock; pipefail fails the step on a bad export.
+    # Install the exact committed lock with --no-deps -- re-resolving would
+    # discard the pyproject override-dependencies the lock encodes and fail.
+    # Strip the CUDA runtime wheels (CPU torch needs none); --torch-backend cpu
+    # redirects torch to CPU wheels. pipefail fails the step on a bad export.
     uv export --frozen --no-hashes --no-emit-project --project "$project" \
-        | uv pip install --torch-backend cpu --no-cache-dir --requirement -
+        | grep -vE '^(nvidia-|cuda-)' \
+        | uv pip install --torch-backend cpu --no-cache-dir --no-deps --requirement -
 
     run_probe "${venv}/bin/python"
 }
@@ -141,7 +146,7 @@ smoke_image() {
         # Provision 3.12 in a venv, exactly as the production entry script does.
         local venv="/tmp/smoke-venv-il"
         uv python install "$py_version"
-        uv venv --python "$py_version" "$venv"
+        uv venv --clear --python "$py_version" "$venv"
         export VIRTUAL_ENV="$venv"
         export PATH="${venv}/bin:${PATH}"
         python_exec="${venv}/bin/python"

@@ -9,40 +9,41 @@ GPU-free import smoke checks that catch syntax, import, dependency-resolution, a
 
 ## 📋 Prerequisites
 
-| Tool   | Required for        | Install                                            |
-|--------|---------------------|----------------------------------------------------|
-| uv     | All modes           | `curl -LsSf https://astral.sh/uv/install.sh \| sh` |
-| Docker | Runtime-image smoke | <https://docs.docker.com/get-docker/>              |
-| bash   | All modes           | Preinstalled on macOS and Linux                    |
+| Tool   | Required for                             | Install                                            |
+|--------|------------------------------------------|----------------------------------------------------|
+| Docker | `smoke-image.sh` (any local host)        | <https://docs.docker.com/get-docker/>              |
+| uv     | `smoke-import.sh` direct on linux/x86_64 | `curl -LsSf https://astral.sh/uv/install.sh \| sh` |
+| bash   | All modes                                | Preinstalled on macOS and Linux                    |
 
 Run every command from the repository root.
 
 ## 🚀 Usage
 
-Two depths. The CPU import smoke resolves CPU torch wheels on the host; the runtime-image smoke pulls the domain's production container and imports inside it on the real interpreter.
+The locks target linux/x86_64, so on macOS or any non-linux host run the smoke through Docker with `smoke-image.sh`. On a linux/x86_64 host (and in CI) the inner `smoke-import.sh` runs directly.
 
 ```bash
-# CPU import smoke — fast, no Docker
-shared/ci/smoke-import.sh rl --mode cpu
-shared/ci/smoke-import.sh il --mode cpu
-shared/ci/smoke-import.sh evaluation --mode cpu
+# Any host with Docker (macOS included)
+shared/ci/smoke-image.sh rl --mode cpu           # CPU import smoke, lightweight container
+shared/ci/smoke-image.sh il --mode cpu
+shared/ci/smoke-image.sh evaluation --mode cpu
+shared/ci/smoke-image.sh rl                       # runtime-image smoke (Isaac Lab)
+shared/ci/smoke-image.sh il                       # runtime-image smoke (PyTorch)
 
-# Runtime-image smoke — pulls the domain's container, runs inside it
-shared/ci/smoke-image.sh rl
-shared/ci/smoke-image.sh il
+# linux/x86_64 host or CI — run the inner probe directly, no Docker
+shared/ci/smoke-import.sh rl --mode cpu
 ```
 
-`smoke-image.sh` resolves the domain image, mounts the repository at `/workspace`, and runs `smoke-import.sh <domain> --mode image` inside the container. CI calls the same wrapper after a free-disk-space step.
+`smoke-image.sh` mounts the repository at `/workspace` and runs `smoke-import.sh <domain> --mode <mode>` inside a linux/amd64 container: a lightweight uv image for `--mode cpu`, the domain's production image for `--mode image`. CI runs the CPU smoke directly on its linux runners and calls `smoke-image.sh` for the runtime-image depth after a free-disk-space step.
 
 > [!NOTE]
-> The runtime images are multi-gigabyte. The first `smoke-image.sh` run pulls the image; expect several minutes and ensure free disk.
+> The runtime images are multi-gigabyte. The first `--mode image` run pulls the image; expect several minutes and ensure free disk.
 
 ## 📦 Scripts
 
-| Script            | Purpose                                                                    |
-|-------------------|----------------------------------------------------------------------------|
-| `smoke-import.sh` | Install a domain's locked dependencies and import it (`--mode cpu\|image`) |
-| `smoke-image.sh`  | Resolve a domain's image and run `smoke-import.sh --mode image` in Docker  |
+| Script            | Purpose                                                                          |
+|-------------------|----------------------------------------------------------------------------------|
+| `smoke-import.sh` | Inner probe: install a domain's locked deps and import it; runs on linux/x86_64  |
+| `smoke-image.sh`  | Run `smoke-import.sh` in a linux/amd64 container (`--mode cpu\|image`), any host |
 
 ## 🧪 Domains
 
