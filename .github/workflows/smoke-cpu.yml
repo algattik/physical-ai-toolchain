@@ -1,0 +1,124 @@
+name: Smoke (GPU-free)
+
+# GPU-free import smoke gate. Two depths, both on standard runners:
+#   - CPU import smoke runs for every domain, unconditionally, on each PR.
+#   - Runtime-image smoke pulls a domain's real container and imports it on the
+#     real interpreter; path-gated by the caller because it pulls a large image.
+
+'on':
+  workflow_call:
+    inputs:
+      rl:
+        description: 'Run the RL runtime-image smoke (training/rl changed)'
+        required: false
+        default: false
+        type: boolean
+      il:
+        description: 'Run the LeRobot runtime-image smoke (training/il changed)'
+        required: false
+        default: false
+        type: boolean
+      soft-fail:
+        description: 'Do not fail the job when a smoke probe fails'
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+jobs:
+  # Unconditional baseline: import every domain on CPU. Running all domains (in
+  # parallel) rather than path-gating keeps the baseline fail-safe -- a path
+  # misclassification can never silently skip it.
+  import-smoke:
+    name: CPU Import Smoke (${{ matrix.domain }})
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        domain: [rl, il, evaluation]
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
+        with:
+          persist-credentials: false
+
+      - name: Setup uv
+        uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39  # v8.2.0
+
+      - name: CPU import smoke
+        continue-on-error: ${{ inputs.soft-fail }}
+        run: shared/ci/smoke-import.sh ${{ matrix.domain }} --mode cpu
+
+  # Runtime-image smoke: import the domain inside its real production container,
+  # on the real interpreter. Path-gated (large image pull) via the caller input.
+  image-smoke-rl:
+    name: Runtime-Image Smoke (rl)
+    if: inputs.rl
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
+        with:
+          persist-credentials: false
+
+      - name: Free disk space
+        uses: jlumbroso/free-disk-space@54081f138730dfa15788a46383842cd2f914a1be  # v1.3.1
+        with:
+          tool-cache: true
+
+      - name: Resolve Isaac Lab image
+        id: img
+        run: |
+          set -euo pipefail
+          # shellcheck source=/dev/null
+          source scripts/lib/common.sh
+          echo "image=${DEFAULT_ISAAC_LAB_IMAGE}" >> "$GITHUB_OUTPUT"
+
+      - name: Runtime-image smoke
+        continue-on-error: ${{ inputs.soft-fail }}
+        run: |
+          docker run --rm --entrypoint bash \
+            -v "$PWD":/workspace -w /workspace \
+            "${{ steps.img.outputs.image }}" \
+            shared/ci/smoke-import.sh rl --mode image
+
+  image-smoke-il:
+    name: Runtime-Image Smoke (il)
+    if: inputs.il
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
+        with:
+          persist-credentials: false
+
+      - name: Free disk space
+        uses: jlumbroso/free-disk-space@54081f138730dfa15788a46383842cd2f914a1be  # v1.3.1
+        with:
+          tool-cache: true
+
+      - name: Resolve LeRobot image
+        id: img
+        run: |
+          set -euo pipefail
+          # Source of truth: training/il/workflows/osmo/lerobot-train.yaml default.
+          image="$(grep -E '^[[:space:]]*image:[[:space:]]*pytorch/' \
+            training/il/workflows/osmo/lerobot-train.yaml | head -1 | awk '{print $2}')"
+          test -n "$image"
+          echo "image=${image}" >> "$GITHUB_OUTPUT"
+
+      - name: Runtime-image smoke
+        continue-on-error: ${{ inputs.soft-fail }}
+        run: |
+          docker run --rm --entrypoint bash \
+            -v "$PWD":/workspace -w /workspace \
+            "${{ steps.img.outputs.image }}" \
+            shared/ci/smoke-import.sh il --mode image

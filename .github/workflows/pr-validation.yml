@@ -21,6 +21,8 @@ jobs:
       contents: read
     outputs:
       training: ${{ steps.filter.outputs.training }}
+      rl: ${{ steps.filter.outputs.rl }}
+      il: ${{ steps.filter.outputs.il }}
       dm_tools: ${{ steps.filter.outputs.dm_tools }}
       data_pipeline: ${{ steps.filter.outputs.data_pipeline }}
       inference: ${{ steps.filter.outputs.inference }}
@@ -50,6 +52,8 @@ jobs:
           echo "Computed pester=$pester_match"
           {
             echo "training=$(match '^training/')"
+            echo "rl=$(match '^(training/rl/|shared/ci/|scripts/lib/common\.sh|\.github/workflows/smoke-cpu\.yml)')"
+            echo "il=$(match '^(training/il/|shared/ci/|\.github/workflows/smoke-cpu\.yml)')"
             echo "dm_tools=$(match '^data-management/tools/')"
             echo "data_pipeline=$(match '^data-pipeline/capture/')"
             echo "inference=$(match '^fleet-deployment/inference/')"
@@ -59,6 +63,19 @@ jobs:
             echo "docusaurus=$(match '^docs/docusaurus/')"
             echo "pester=$pester_match"
           } >> "$GITHUB_OUTPUT"
+
+  # GPU-free import smoke gate. CPU import smoke runs for every domain on every
+  # PR (unconditional baseline); the runtime-image smoke is path-gated to the
+  # changed training domain.
+  smoke:
+    name: Smoke
+    needs: changes
+    uses: ./.github/workflows/smoke-cpu.yml
+    with:
+      rl: ${{ needs.changes.outputs.rl == 'true' }}
+      il: ${{ needs.changes.outputs.il == 'true' }}
+    permissions:
+      contents: read
 
   # Validate that all `uses: ./.github/workflows/*.yml` references resolve
   workflow-refs-check:
@@ -457,6 +474,7 @@ jobs:
       - go-tests
       - shellcheck
       - codeql-analysis
+      - smoke
     permissions:
       contents: read
     steps:
