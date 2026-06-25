@@ -1,61 +1,64 @@
+version: 2
 updates:
-- commit-message:
-    include: scope
-    prefix: chore
+- package-ecosystem: npm
   directory: /
+  schedule:
+    interval: weekly
+    day: monday
   groups:
     root-npm-dependencies:
       patterns:
       - "*"
+  open-pull-requests-limit: 5
   labels:
   - dependencies
   - npm
-  open-pull-requests-limit: 5
-  package-ecosystem: npm
-  schedule:
-    day: monday
-    interval: weekly
-- commit-message:
-    include: scope
+  commit-message:
     prefix: chore
+    include: scope
+- package-ecosystem: uv
   directory: /
+  schedule:
+    interval: weekly
+    day: monday
   groups:
     python-dependencies:
       patterns:
       - "*"
+  open-pull-requests-limit: 10
   labels:
   - dependencies
   - python
-  open-pull-requests-limit: 10
-  package-ecosystem: uv
-  schedule:
-    day: monday
-    interval: weekly
-- commit-message:
-    include: scope
+  commit-message:
     prefix: chore
+    include: scope
+- package-ecosystem: uv
   directory: /data-pipeline
+  schedule:
+    interval: weekly
+    day: monday
   groups:
     data-pipeline-dependencies:
       patterns:
       - "*"
+  open-pull-requests-limit: 5
   labels:
   - dependencies
   - python
   - data-pipeline
-  open-pull-requests-limit: 5
-  package-ecosystem: uv
-  schedule:
-    day: monday
-    interval: weekly
-- commit-message:
-    include: scope
+  commit-message:
     prefix: chore
+    include: scope
+- package-ecosystem: uv
   directory: /training/rl
+  schedule:
+    interval: weekly
+    day: monday
   groups:
     training-dependencies:
       patterns:
       - "*"
+  open-pull-requests-limit: 5
   ignore:
   - dependency-name: "marshmallow"
     versions:
@@ -64,19 +67,19 @@ updates:
   - dependencies
   - python
   - training
-  open-pull-requests-limit: 5
-  package-ecosystem: uv
-  schedule:
-    day: monday
-    interval: weekly
-- commit-message:
-    include: scope
+  commit-message:
     prefix: chore
+    include: scope
+- package-ecosystem: uv
   directory: /training/il/lerobot
+  schedule:
+    interval: weekly
+    day: monday
   groups:
     lerobot-dependencies:
       patterns:
       - "*"
+  open-pull-requests-limit: 5
   ignore:
   - dependency-name: "marshmallow"
     versions:
@@ -94,19 +97,19 @@ updates:
   - dependencies
   - python
   - training
-  open-pull-requests-limit: 5
-  package-ecosystem: uv
-  schedule:
-    day: monday
-    interval: weekly
-- commit-message:
-    include: scope
+  commit-message:
     prefix: chore
+    include: scope
+- package-ecosystem: uv
   directory: /evaluation
+  schedule:
+    interval: weekly
+    day: monday
   groups:
     inference-dependencies:
       patterns:
       - "*"
+  open-pull-requests-limit: 5
   ignore:
   - dependency-name: "marshmallow"
     versions:
@@ -123,19 +126,19 @@ updates:
   labels:
   - dependencies
   - python
-  open-pull-requests-limit: 5
-  package-ecosystem: uv
-  schedule:
-    day: monday
-    interval: weekly
-- commit-message:
-    include: scope
+  commit-message:
     prefix: chore
+    include: scope
+- package-ecosystem: uv
   directory: /evaluation/sil/docker
+  schedule:
+    interval: weekly
+    day: monday
   groups:
     lerobot-eval-image-dependencies:
       patterns:
       - "*"
+  open-pull-requests-limit: 5
   ignore:
   - dependency-name: "av"
     versions:
@@ -144,89 +147,89 @@ updates:
   - dependencies
   - python
   - evaluation
-  open-pull-requests-limit: 5
-  package-ecosystem: uv
-  schedule:
-    day: monday
-    interval: weekly
-- commit-message:
-    include: scope
+  commit-message:
     prefix: chore
+    include: scope
+- package-ecosystem: uv
   directory: /workflows/osmo
+  schedule:
+    interval: weekly
+    day: monday
   groups:
     osmo-dependencies:
       patterns:
       - "*"
+  open-pull-requests-limit: 5
   labels:
   - dependencies
   - python
-  open-pull-requests-limit: 5
-  package-ecosystem: uv
-  schedule:
-    day: monday
-    interval: weekly
-- commit-message:
-    include: scope
+  commit-message:
     prefix: chore
+    include: scope
+- package-ecosystem: terraform
   directory: /infrastructure/terraform
+  schedule:
+    interval: weekly
+    day: monday
+  open-pull-requests-limit: 5
   labels:
   - dependencies
   - terraform
-  open-pull-requests-limit: 5
-  package-ecosystem: terraform
-  schedule:
-    day: monday
-    interval: weekly
-- commit-message:
-    include: scope
+  commit-message:
     prefix: chore
+    include: scope
+- package-ecosystem: terraform
   directory: /infrastructure/terraform/dns
+  schedule:
+    interval: weekly
+    day: monday
+  open-pull-requests-limit: 5
   labels:
   - dependencies
   - terraform
-  open-pull-requests-limit: 5
-  package-ecosystem: terraform
-  schedule:
-    day: monday
-    interval: weekly
-- commit-message:
-    include: scope
+  commit-message:
     prefix: chore
+    include: scope
+- package-ecosystem: terraform
   directory: /infrastructure/terraform/vpn
+  schedule:
+    interval: weekly
+    day: monday
+  open-pull-requests-limit: 5
   labels:
   - dependencies
   - terraform
-  open-pull-requests-limit: 5
-  package-ecosystem: terraform
-  schedule:
-    day: monday
-    interval: weekly
-- commit-message:
-    include: scope
+  commit-message:
     prefix: chore
+    include: scope
+- package-ecosystem: terraform
   directory: /infrastructure/terraform/automation
+  schedule:
+    interval: weekly
+    day: monday
+  open-pull-requests-limit: 5
   labels:
   - dependencies
   - terraform
-  open-pull-requests-limit: 5
-  package-ecosystem: terraform
-  schedule:
-    day: monday
-    interval: weekly
-- commit-message:
-    include: scope
+  commit-message:
     prefix: chore
+    include: scope
+- package-ecosystem: github-actions
   directory: /
   # Agentic Workflows lock files are generated by `gh aw compile`; update the
   # source `.md` workflow instead of accepting direct Dependabot edits here.
   exclude-paths:
   - ".github/workflows/*.lock.yml"
+  schedule:
+    interval: weekly
+    day: monday
   groups:
     github-actions:
-      exclude-patterns:
-      - github/gh-aw-actions/*
       patterns:
       - "*"
+      exclude-patterns:
+      - github/gh-aw-actions/*
+  open-pull-requests-limit: 5
   ignore:
   - dependency-name: "github/gh-aw-actions/*"
   - dependency-name: "github/gh-aw-actions/**"
@@ -234,49 +237,48 @@ updates:
   labels:
   - dependencies
   - github-actions
-  open-pull-requests-limit: 5
-  package-ecosystem: github-actions
-  schedule:
-    day: monday
-    interval: weekly
-- commit-message:
-    include: scope
+  commit-message:
     prefix: chore
+    include: scope
+- package-ecosystem: uv
   directory: /data-management/viewer
+  schedule:
+    interval: weekly
+    day: monday
   groups:
     dataviewer-dependencies:
       patterns:
       - "*"
+  open-pull-requests-limit: 5
   labels:
   - dependencies
   - python
   - dataviewer
-  open-pull-requests-limit: 5
-  package-ecosystem: uv
-  schedule:
-    day: monday
-    interval: weekly
-- commit-message:
-    include: scope
+  commit-message:
     prefix: chore
+    include: scope
+- package-ecosystem: uv
   directory: /data-management/viewer/backend
+  schedule:
+    interval: weekly
+    day: monday
   groups:
     dataviewer-backend-dependencies:
       patterns:
       - "*"
+  open-pull-requests-limit: 5
   labels:
   - dependencies
   - python
   - dataviewer
-  open-pull-requests-limit: 5
-  package-ecosystem: uv
-  schedule:
-    day: monday
-    interval: weekly
-- commit-message:
-    include: scope
+  commit-message:
     prefix: chore
+    include: scope
+- package-ecosystem: npm
   directory: /data-management/viewer/frontend
+  schedule:
+    interval: weekly
+    day: monday
   groups:
     dataviewer-frontend-patch-minor:
       patterns:
@@ -284,77 +286,75 @@ updates:
       update-types:
       - minor
       - patch
+  open-pull-requests-limit: 10
   labels:
   - dependencies
   - npm
   - dataviewer
-  open-pull-requests-limit: 10
-  package-ecosystem: npm
-  schedule:
-    day: monday
-    interval: weekly
-- commit-message:
-    include: scope
+  commit-message:
     prefix: chore
+    include: scope
+- package-ecosystem: npm
   directory: /docs/docusaurus
+  schedule:
+    interval: weekly
+    day: monday
   groups:
     docusaurus-dependencies:
       patterns:
       - "*"
+  open-pull-requests-limit: 5
   labels:
   - dependencies
   - npm
-  open-pull-requests-limit: 5
-  package-ecosystem: npm
-  schedule:
-    day: monday
-    interval: weekly
-- commit-message:
-    include: scope
+  commit-message:
     prefix: chore
+    include: scope
+- package-ecosystem: gomod
   directory: /infrastructure/terraform/e2e
+  schedule:
+    interval: weekly
+    day: monday
+  open-pull-requests-limit: 5
   labels:
   - dependencies
   - infrastructure
-  open-pull-requests-limit: 5
-  package-ecosystem: gomod
-  schedule:
-    day: monday
-    interval: weekly
-- commit-message:
-    include: scope
+  commit-message:
     prefix: chore
+    include: scope
+- package-ecosystem: docker
   directory: /data-management/viewer/backend
+  schedule:
+    interval: weekly
+    day: monday
+  open-pull-requests-limit: 5
   labels:
   - dependencies
   - docker
-  open-pull-requests-limit: 5
-  package-ecosystem: docker
-  schedule:
-    day: monday
-    interval: weekly
-- commit-message:
-    include: scope
+  commit-message:
     prefix: chore
+    include: scope
+- package-ecosystem: docker
   directory: /data-management/viewer/frontend
+  schedule:
+    interval: weekly
+    day: monday
+  open-pull-requests-limit: 5
   labels:
   - dependencies
   - docker
-  open-pull-requests-limit: 5
-  package-ecosystem: docker
-  schedule:
-    day: monday
-    interval: weekly
-- commit-message:
-    include: scope
+  commit-message:
     prefix: chore
+    include: scope
+- package-ecosystem: docker
   directory: /evaluation/sil/docker
+  schedule:
+    interval: weekly
+    day: monday
+  open-pull-requests-limit: 5
   labels:
   - dependencies
   - docker
-  open-pull-requests-limit: 5
-  package-ecosystem: docker
-  schedule:
-    day: monday
-    interval: weekly
-version: 2
+  commit-message:
+    prefix: chore
+    include: scope
