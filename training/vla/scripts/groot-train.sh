@@ -28,8 +28,8 @@ elif [ -n "${BLOB_URL:-}" ]; then
   echo "--- downloading dataset from Azure Blob ---"
   mkdir -p "${DATASET_PATH}"
   export DEBIAN_FRONTEND=noninteractive
-  retry_cmd 3 apt-get update -qq
-  retry_cmd 3 apt-get install -y --no-install-recommends curl >/dev/null
+  retry_cmd 3 apt-get -o Acquire::Retries=3 -qq update
+  retry_cmd 3 apt-get -o Acquire::Retries=3 -qq install -y --no-install-recommends curl >/dev/null
   pip install --quiet azure-storage-blob azure-identity
   python3 /tmp/download_blob.py
   echo "--- dataset download complete ---"
@@ -78,8 +78,8 @@ echo "--- dataset ---"; ls -1 "${DATASET_PATH}" | head
 echo "--- dataset/meta ---"; ls -1 "${DATASET_PATH}/meta" | head
 
 export DEBIAN_FRONTEND=noninteractive
-retry_cmd 3 apt-get update -qq
-retry_cmd 3 apt-get install -y --no-install-recommends \
+retry_cmd 3 apt-get -o Acquire::Retries=3 -qq update
+retry_cmd 3 apt-get -o Acquire::Retries=3 -qq install -y --no-install-recommends \
   git git-lfs build-essential cmake ffmpeg \
   libgl1-mesa-glx libglib2.0-0 libsm6 libxext6 libxrender-dev \
   libvulkan-dev ca-certificates wget curl >/dev/null
@@ -99,20 +99,25 @@ if ! git checkout "${ISAAC_GROOT_REF}"; then
   git checkout "${ISAAC_GROOT_REF}"
 fi
 
-# GR00T N1.7+ pins python==3.10.*; the default pytorch image ships
-# python 3.11. Create a conda env when the active interpreter is
-# not 3.10 so the editable install can resolve.
-if [ -f "gr00t/experiment/launch_finetune.py" ]; then
-  CURRENT_PY="$(python3 -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")')"
-  if [ "${CURRENT_PY}" != "3.10" ] && command -v conda >/dev/null 2>&1; then
-    echo "[setup] GR00T N1.7 requires Python 3.10 (active: ${CURRENT_PY}); creating conda env"
-    conda create -y -n gr00t-py310 python=3.10
-    # shellcheck disable=SC1091
-    source /opt/conda/etc/profile.d/conda.sh
-    conda activate gr00t-py310
-    pip install --upgrade pip setuptools wheel
-    pip install azure-identity azure-storage-blob
+# The pinned dependency surface (uv.lock) targets Python 3.10: requires-python
+# is ==3.10.* and flash-attn ships only a cp310 wheel. Both GR00T versions (N1.5
+# and N1.7) share this lock, while the default pytorch image ships Python 3.11.
+# Provision a Python 3.10 conda env whenever the active interpreter differs so
+# the cp310 wheels resolve and import; otherwise uv silently skips the flash-attn
+# wheel and training fails later on the missing module.
+CURRENT_PY="$(python3 -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")')"
+if [ "${CURRENT_PY}" != "3.10" ]; then
+  if ! command -v conda >/dev/null 2>&1; then
+    echo "ERROR: Python 3.10 is required (active: ${CURRENT_PY}) but conda is unavailable to create it" >&2
+    exit 1
   fi
+  echo "[setup] dependency lock requires Python 3.10 (active: ${CURRENT_PY}); creating conda env"
+  conda create -y -q -n gr00t-py310 python=3.10
+  # shellcheck disable=SC1091
+  source /opt/conda/etc/profile.d/conda.sh
+  conda activate gr00t-py310
+  pip install --upgrade pip setuptools wheel
+  pip install azure-identity azure-storage-blob
 fi
 
 pip install --upgrade pip setuptools wheel
