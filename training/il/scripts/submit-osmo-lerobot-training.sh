@@ -115,10 +115,11 @@ EXAMPLES:
       --no-val-split \
       -r my-act-model
 
-    # Multi-GPU training (4 GPUs, bf16 mixed precision)
+    # Multi-GPU training (2 GPUs, bf16 mixed precision)
     submit-osmo-lerobot-training.sh \
       -d lerobot/aloha_sim_insertion_human \
-      --num-gpus 4 \
+      --num-gpus 2 \
+      --platform gpu_platform_2x \
       --mixed-precision bf16
 EOF
 }
