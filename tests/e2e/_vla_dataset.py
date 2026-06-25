@@ -46,17 +46,6 @@ _FPS = 10.0
 _FRAME_SIZE = 224
 _ACTION_HORIZON = 16
 
-# Parquet columns whose statistics are emitted to meta/stats.json. The video is
-# stored as mp4 (no parquet column), so it is intentionally excluded.
-_SCALAR_COLUMNS: tuple[tuple[str, str], ...] = (
-    ("timestamp", "float64"),
-    ("task_index", "int64"),
-    ("episode_index", "int64"),
-    ("index", "int64"),
-    ("next.reward", "float64"),
-    ("next.done", "bool"),
-)
-
 
 def _field_ranges(fields: tuple[tuple[str, int], ...]) -> dict[str, dict[str, int]]:
     ranges: dict[str, dict[str, int]] = {}
