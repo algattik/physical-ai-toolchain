@@ -5,10 +5,15 @@ updates:
   schedule:
     interval: weekly
     day: monday
+  cooldown:
+    default-days: 7
   groups:
     root-npm-dependencies:
       patterns:
       - "*"
+      update-types:
+      - minor
+      - patch
   open-pull-requests-limit: 5
   labels:
   - dependencies
@@ -21,10 +26,15 @@ updates:
   schedule:
     interval: weekly
     day: monday
+  cooldown:
+    default-days: 7
   groups:
     python-dependencies:
       patterns:
       - "*"
+      update-types:
+      - minor
+      - patch
   open-pull-requests-limit: 10
   labels:
   - dependencies
@@ -37,10 +47,15 @@ updates:
   schedule:
     interval: weekly
     day: monday
+  cooldown:
+    default-days: 7
   groups:
     data-pipeline-dependencies:
       patterns:
       - "*"
+      update-types:
+      - minor
+      - patch
   open-pull-requests-limit: 5
   labels:
   - dependencies
@@ -54,10 +69,15 @@ updates:
   schedule:
     interval: weekly
     day: monday
+  cooldown:
+    default-days: 7
   groups:
     training-dependencies:
       patterns:
       - "*"
+      update-types:
+      - minor
+      - patch
   open-pull-requests-limit: 5
   ignore:
   - dependency-name: "marshmallow"
@@ -75,10 +95,15 @@ updates:
   schedule:
     interval: weekly
     day: monday
+  cooldown:
+    default-days: 7
   groups:
     lerobot-dependencies:
       patterns:
       - "*"
+      update-types:
+      - minor
+      - patch
   open-pull-requests-limit: 5
   ignore:
   - dependency-name: "marshmallow"
@@ -105,10 +130,15 @@ updates:
   schedule:
     interval: weekly
     day: monday
+  cooldown:
+    default-days: 7
   groups:
     inference-dependencies:
       patterns:
       - "*"
+      update-types:
+      - minor
+      - patch
   open-pull-requests-limit: 5
   ignore:
   - dependency-name: "marshmallow"
@@ -134,10 +164,15 @@ updates:
   schedule:
     interval: weekly
     day: monday
+  cooldown:
+    default-days: 7
   groups:
     lerobot-eval-image-dependencies:
       patterns:
       - "*"
+      update-types:
+      - minor
+      - patch
   open-pull-requests-limit: 5
   ignore:
   - dependency-name: "av"
@@ -155,10 +190,15 @@ updates:
   schedule:
     interval: weekly
     day: monday
+  cooldown:
+    default-days: 7
   groups:
     osmo-dependencies:
       patterns:
       - "*"
+      update-types:
+      - minor
+      - patch
   open-pull-requests-limit: 5
   labels:
   - dependencies
@@ -171,6 +211,15 @@ updates:
   schedule:
     interval: weekly
     day: monday
+  cooldown:
+    default-days: 7
+  groups:
+    terraform-dependencies:
+      patterns:
+      - "*"
+      update-types:
+      - minor
+      - patch
   open-pull-requests-limit: 5
   labels:
   - dependencies
@@ -183,6 +232,15 @@ updates:
   schedule:
     interval: weekly
     day: monday
+  cooldown:
+    default-days: 7
+  groups:
+    terraform-dns-dependencies:
+      patterns:
+      - "*"
+      update-types:
+      - minor
+      - patch
   open-pull-requests-limit: 5
   labels:
   - dependencies
@@ -195,6 +253,15 @@ updates:
   schedule:
     interval: weekly
     day: monday
+  cooldown:
+    default-days: 7
+  groups:
+    terraform-vpn-dependencies:
+      patterns:
+      - "*"
+      update-types:
+      - minor
+      - patch
   open-pull-requests-limit: 5
   labels:
   - dependencies
@@ -207,6 +274,15 @@ updates:
   schedule:
     interval: weekly
     day: monday
+  cooldown:
+    default-days: 7
+  groups:
+    terraform-automation-dependencies:
+      patterns:
+      - "*"
+      update-types:
+      - minor
+      - patch
   open-pull-requests-limit: 5
   labels:
   - dependencies
@@ -223,12 +299,17 @@ updates:
   schedule:
     interval: weekly
     day: monday
+  cooldown:
+    default-days: 7
   groups:
     github-actions:
       patterns:
       - "*"
       exclude-patterns:
       - github/gh-aw-actions/*
+      update-types:
+      - minor
+      - patch
   open-pull-requests-limit: 5
   ignore:
   - dependency-name: "github/gh-aw-actions/*"
@@ -245,10 +326,15 @@ updates:
   schedule:
     interval: weekly
     day: monday
+  cooldown:
+    default-days: 7
   groups:
     dataviewer-dependencies:
       patterns:
       - "*"
+      update-types:
+      - minor
+      - patch
   open-pull-requests-limit: 5
   labels:
   - dependencies
@@ -262,10 +348,15 @@ updates:
   schedule:
     interval: weekly
     day: monday
+  cooldown:
+    default-days: 7
   groups:
     dataviewer-backend-dependencies:
       patterns:
       - "*"
+      update-types:
+      - minor
+      - patch
   open-pull-requests-limit: 5
   labels:
   - dependencies
@@ -279,6 +370,8 @@ updates:
   schedule:
     interval: weekly
     day: monday
+  cooldown:
+    default-days: 7
   groups:
     dataviewer-frontend-patch-minor:
       patterns:
@@ -299,10 +392,15 @@ updates:
   schedule:
     interval: weekly
     day: monday
+  cooldown:
+    default-days: 7
   groups:
     docusaurus-dependencies:
       patterns:
       - "*"
+      update-types:
+      - minor
+      - patch
   open-pull-requests-limit: 5
   labels:
   - dependencies
@@ -315,6 +413,15 @@ updates:
   schedule:
     interval: weekly
     day: monday
+  cooldown:
+    default-days: 7
+  groups:
+    terraform-e2e-go-dependencies:
+      patterns:
+      - "*"
+      update-types:
+      - minor
+      - patch
   open-pull-requests-limit: 5
   labels:
   - dependencies
@@ -327,6 +434,15 @@ updates:
   schedule:
     interval: weekly
     day: monday
+  cooldown:
+    default-days: 7
+  groups:
+    dataviewer-backend-docker-dependencies:
+      patterns:
+      - "*"
+      update-types:
+      - minor
+      - patch
   open-pull-requests-limit: 5
   labels:
   - dependencies
@@ -339,6 +455,15 @@ updates:
   schedule:
     interval: weekly
     day: monday
+  cooldown:
+    default-days: 7
+  groups:
+    dataviewer-frontend-docker-dependencies:
+      patterns:
+      - "*"
+      update-types:
+      - minor
+      - patch
   open-pull-requests-limit: 5
   labels:
   - dependencies
@@ -351,6 +476,15 @@ updates:
   schedule:
     interval: weekly
     day: monday
+  cooldown:
+    default-days: 7
+  groups:
+    lerobot-eval-docker-dependencies:
+      patterns:
+      - "*"
+      update-types:
+      - minor
+      - patch
   open-pull-requests-limit: 5
   labels:
   - dependencies
