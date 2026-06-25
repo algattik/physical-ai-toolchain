@@ -72,21 +72,9 @@ jobs:
         with:
           tool-cache: true
 
-      - name: Resolve Isaac Lab image
-        id: img
-        run: |
-          set -euo pipefail
-          # shellcheck source=/dev/null
-          source scripts/lib/common.sh
-          echo "image=${DEFAULT_ISAAC_LAB_IMAGE}" >> "$GITHUB_OUTPUT"
-
       - name: Runtime-image smoke
         continue-on-error: ${{ inputs.soft-fail }}
-        run: |
-          docker run --rm --entrypoint bash \
-            -v "$PWD":/workspace -w /workspace \
-            "${{ steps.img.outputs.image }}" \
-            shared/ci/smoke-import.sh rl --mode image
+        run: shared/ci/smoke-image.sh rl
 
   image-smoke-il:
     name: Runtime-Image Smoke (il)
@@ -105,20 +93,6 @@ jobs:
         with:
           tool-cache: true
 
-      - name: Resolve LeRobot image
-        id: img
-        run: |
-          set -euo pipefail
-          # Source of truth: training/il/workflows/osmo/lerobot-train.yaml default.
-          image="$(grep -E '^[[:space:]]*image:[[:space:]]*pytorch/' \
-            training/il/workflows/osmo/lerobot-train.yaml | head -1 | awk '{print $2}')"
-          test -n "$image"
-          echo "image=${image}" >> "$GITHUB_OUTPUT"
-
       - name: Runtime-image smoke
         continue-on-error: ${{ inputs.soft-fail }}
-        run: |
-          docker run --rm --entrypoint bash \
-            -v "$PWD":/workspace -w /workspace \
-            "${{ steps.img.outputs.image }}" \
-            shared/ci/smoke-import.sh il --mode image
+        run: shared/ci/smoke-image.sh il
