@@ -98,7 +98,7 @@ stage_and_upload_code() {
   shift 2
   [[ $# -gt 0 ]] || { error "stage_and_upload_code: no paths to package"; return 1; }
 
-  local tmp archive hash uri size
+  local tmp archive hash uri size extract manifest
   tmp="$(mktemp -d)"
   archive="$tmp/osmo-code.zip"
 
@@ -125,8 +125,49 @@ stage_and_upload_code() {
   fi
 
   size="$(wc -c < "$archive" | tr -d ' ')"
-  hash="$(calculate_sha256 "$archive" | cut -c1-16)"
+
+  # Content-addressed key over the archive *contents* (per-file sha + sorted
+  # relative path), not the .zip itself: Info-ZIP records each entry's mtime, so
+  # hashing the archive file would yield a new key for byte-identical code on
+  # every submit. Re-reading the just-built archive hashes exactly what is
+  # uploaded and reuses the exclude set applied above.
+  extract="$tmp/extract"
+  manifest="$tmp/manifest"
+  mkdir -p "$extract"
+  if ! unzip -qq "$archive" -d "$extract" >&2; then
+    rm -rf "$tmp"
+    error "Failed to extract code archive for content hashing"
+    return 1
+  fi
+  ( cd "$extract" && find . -type f -print0 | LC_ALL=C sort -z \
+    | while IFS= read -r -d '' f; do
+        printf '%s  %s\n' "$(calculate_sha256 "$f")" "$f"
+      done ) > "$manifest"
+  if [[ ! -s "$manifest" ]]; then
+    rm -rf "$tmp"
+    error "Code archive contains no files to hash"
+    return 1
+  fi
+  hash="$(calculate_sha256 "$manifest" | cut -c1-16)"
   uri="${uri_base}/${hash}"
+
+  # Upload only when the content-addressed object is absent. The key is a pure
+  # function of the code, so an existing object is byte-identical: skipping the
+  # upload avoids overwriting an object a concurrent job may be downloading
+  # (osmo data upload always overwrites) and saves re-uploading unchanged code.
+  #
+  # The list (check) and upload (use) are not atomic, so there is a TOCTOU
+  # window. It is benign by construction: because the key is content-addressed,
+  # two submitters that both observe "absent" upload byte-identical bytes to the
+  # same key, and no workflow pod reads the object until *after* its submitter
+  # has finished uploading and submitted the workflow. The worst case is a
+  # redundant overwrite with identical content, never a corrupt or partial read.
+  if osmo data list "$uri" "$tmp/listing" >&2 && grep -q "$hash" "$tmp/listing" 2>/dev/null; then
+    info "Code archive already present at ${uri}; skipping upload" >&2
+    rm -rf "$tmp"
+    echo "$uri"
+    return 0
+  fi
 
   info "Uploading code archive (${size} bytes) to ${uri}" >&2
   if ! osmo data upload "$uri" "$archive" >&2; then

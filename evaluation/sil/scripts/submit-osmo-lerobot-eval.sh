@@ -107,6 +107,9 @@ subscription_id="${AZURE_SUBSCRIPTION_ID:-$(get_subscription_id)}"
 resource_group="${AZURE_RESOURCE_GROUP:-$(get_resource_group)}"
 workspace_name="${AZUREML_WORKSPACE_NAME:-$(get_azureml_workspace)}"
 
+code_storage_account="${AZURE_STORAGE_ACCOUNT_NAME:-$(get_storage_account)}"
+osmo_container="${OSMO_WORKFLOW_BUCKET:-osmo}"
+
 forward_args=()
 
 #------------------------------------------------------------------------------
@@ -210,6 +213,8 @@ if [[ "$config_preview" == "true" ]]; then
   print_kv "Subscription" "${subscription_id:-<not set>}"
   print_kv "Resource Group" "${resource_group:-<not set>}"
   print_kv "Workspace" "${workspace_name:-<not set>}"
+  print_kv "Storage Account" "${code_storage_account:-<not set>}"
+  print_kv "Code Storage" "azure://${code_storage_account}/${osmo_container}/osmo-code"
   print_kv "Workflow" "$workflow"
   exit 0
 fi
@@ -219,8 +224,6 @@ fi
 #------------------------------------------------------------------------------
 
 payload_root="${PAYLOAD_ROOT:-/workspace/lerobot_payload}"
-code_storage_account="${AZURE_STORAGE_ACCOUNT_NAME:-$(get_storage_account)}"
-osmo_container="${OSMO_WORKFLOW_BUCKET:-osmo}"
 [[ -z "$code_storage_account" ]] && fatal "Azure storage account required for code upload (set AZURE_STORAGE_ACCOUNT_NAME or deploy infra)"
 
 info "Packaging and uploading LeRobot runtime payload..."

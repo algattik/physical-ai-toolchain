@@ -106,10 +106,10 @@ workflow:
             # for `uv export`) exceeds that, failing the container execve E2BIG.
             PAYLOAD_ROOT="${PAYLOAD_ROOT:-/workspace/lerobot_payload}"
             mkdir -p "${PAYLOAD_ROOT}"
-            ARCHIVE_PATH="$(find {{input:0}} -maxdepth 2 -name '*.zip' | head -n1)"
+            ARCHIVE_PATH="$(find "{{input:0}}" -maxdepth 2 -name '*.zip' | head -n1)"
             if [[ -z "${ARCHIVE_PATH}" || ! -s "${ARCHIVE_PATH}" ]]; then
               echo "ERROR: no code archive found under the input mount; training payload is required." >&2
-              ls -laR {{input:0}} || true
+              ls -laR "{{input:0}}" || true
               exit 1
             fi
             unzip -oq "${ARCHIVE_PATH}" -d "${PAYLOAD_ROOT}"
