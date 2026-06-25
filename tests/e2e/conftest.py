@@ -225,6 +225,21 @@ def aml_workspace(repo_root: Path) -> AzureMLWorkspace:
 
 
 @pytest.fixture(scope="session")
+def storage_account(repo_root: Path) -> str:
+    """Resolves the storage account used to stage e2e datasets, skipping if undeterminable.
+
+    Resolution order: ``E2E_VLA_STORAGE_ACCOUNT`` env var, then the ``storage_account``
+    Terraform output (or its terraform.tfvars fallback).
+    """
+    account = os.environ.get("E2E_VLA_STORAGE_ACCOUNT")
+    if not account:
+        account = _terraform_outputs(repo_root).try_key_value("storage_account")
+    if not account:
+        pytest.skip("Storage account is not configured in env vars, Terraform outputs, or terraform.tfvars")
+    return account
+
+
+@pytest.fixture(scope="session")
 def aml_compute_target(repo_root: Path, aml_workspace: AzureMLWorkspace) -> None:
     """
     Ensures AML compute target is available, skipping tests if not.

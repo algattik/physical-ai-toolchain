@@ -35,8 +35,8 @@ WORKFLOW OPTIONS:
 
 RESOURCE OPTIONS:
         --gpu COUNT               Number of GPUs (default: 1)
-        --cpu COUNT               CPU cores (default: 30)
-        --memory SIZE             Memory with unit (default: 400Gi)
+        --cpu COUNT               CPU cores (default: 20)
+        --memory SIZE             Memory with unit (default: 180Gi)
         --storage SIZE            Storage with unit (default: 200Gi)
 
 DATASET OPTIONS:
@@ -112,8 +112,8 @@ image="${IMAGE:-$DEFAULT_ISAAC_LAB_IMAGE}"
 backend="${TRAINING_BACKEND:-skrl}"
 
 gpu="${OSMO_GPU:-1}"
-cpu="${OSMO_CPU:-30}"
-memory="${OSMO_MEMORY:-400Gi}"
+cpu="${OSMO_CPU:-20}"
+memory="${OSMO_MEMORY:-180Gi}"
 storage="${OSMO_STORAGE:-200Gi}"
 
 # Dataset configuration
