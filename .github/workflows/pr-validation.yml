@@ -47,6 +47,10 @@ jobs:
           FILES=$(git diff --name-only "$BASE_SHA" "$HEAD_SHA")
           echo "Changed files:"
           echo "$FILES"
+          # match() returns false (not an error) on an empty/non-matching diff.
+          # That is safe: the unconditional CPU import baseline in smoke-cpu.yml
+          # runs regardless of these outputs, so a false here can only narrow the
+          # path-gated runtime-image depth, never silently skip the gate.
           match() { echo "$FILES" | grep -qE "$1" && echo true || echo false; }
           pester_match=$(match '\.(ps1|psm1|psd1)$')
           echo "Computed pester=$pester_match"

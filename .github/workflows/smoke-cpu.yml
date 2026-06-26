@@ -18,11 +18,6 @@ name: Smoke (GPU-free)
         required: false
         default: false
         type: boolean
-      soft-fail:
-        description: 'Do not fail the job when a smoke probe fails'
-        required: false
-        default: false
-        type: boolean
 
 permissions:
   contents: read
@@ -36,6 +31,7 @@ jobs:
   import-smoke:
     name: CPU Import Smoke (${{ matrix.domain }})
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     permissions:
       contents: read
     strategy:
@@ -52,7 +48,6 @@ jobs:
         uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39  # v8.2.0
 
       - name: CPU import smoke
-        continue-on-error: ${{ inputs.soft-fail }}
         run: shared/ci/smoke-import.sh ${{ matrix.domain }} --mode cpu
 
   # Runtime-image smoke: import the domain inside its real production container,
@@ -61,6 +56,7 @@ jobs:
     name: Runtime-Image Smoke (rl)
     if: inputs.rl
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     permissions:
       contents: read
     steps:
@@ -75,13 +71,13 @@ jobs:
           tool-cache: true
 
       - name: Runtime-image smoke
-        continue-on-error: ${{ inputs.soft-fail }}
         run: shared/ci/smoke-image.sh rl
 
   image-smoke-il:
     name: Runtime-Image Smoke (il)
     if: inputs.il
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     permissions:
       contents: read
     steps:
@@ -96,5 +92,4 @@ jobs:
           tool-cache: true
 
       - name: Runtime-image smoke
-        continue-on-error: ${{ inputs.soft-fail }}
         run: shared/ci/smoke-image.sh il
