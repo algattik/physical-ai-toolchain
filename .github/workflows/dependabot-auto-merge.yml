@@ -1,0 +1,55 @@
+name: Dependabot Auto-merge
+
+on:
+  pull_request:
+    types:
+      - opened
+      - reopened
+      - synchronize
+
+permissions:
+  contents: read
+
+jobs:
+  auto-merge:
+    name: Auto-merge patch bumps
+    runs-on: ubuntu-latest
+    if: github.actor == 'dependabot[bot]'
+    permissions:
+      contents: write
+      pull-requests: write
+
+    steps:
+      - name: Fetch Dependabot metadata
+        id: metadata
+        uses: dependabot/fetch-metadata@25dd0e34f4fe68f24cc83900b1fe3fe149efef98 # v3.1.0
+        with:
+          github-token: "${{ secrets.GITHUB_TOKEN }}"
+
+      - name: Enable auto-merge for eligible patch bumps
+        # All values below are dependabot/fetch-metadata outputs, not dependabot.yml strings:
+        #  - update-type 'version-update:semver-patch' = patch bumps only
+        #  - ghsa-id '' = not a security advisory (security PRs never auto-merge)
+        #  - package-ecosystem is normalized: npm/yarn -> 'npm_and_yarn', github-actions -> 'github_actions'
+        # uv excluded (CPU CI blind to GPU/ABI); gomod manual until Go patches have a CI gate.
+        if: >-
+          steps.metadata.outputs.update-type == 'version-update:semver-patch'
+          && steps.metadata.outputs.ghsa-id == ''
+          && (
+            steps.metadata.outputs.package-ecosystem == 'github_actions'
+            || steps.metadata.outputs.package-ecosystem == 'terraform'
+            || steps.metadata.outputs.package-ecosystem == 'npm_and_yarn'
+            || steps.metadata.outputs.package-ecosystem == 'docker'
+          )
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_URL: ${{ github.event.pull_request.html_url }}
+        run: |
+          if out=$(gh pr merge --auto --squash "${PR_URL}" 2>&1); then
+            echo "Auto-merge armed: ${PR_URL}"
+          elif grep -qi "auto.merge is not allowed" <<<"${out}"; then
+            echo "::notice::'Allow auto-merge' is off; no-op until an admin enables it."
+          else
+            echo "${out}" >&2
+            exit 1
+          fi
