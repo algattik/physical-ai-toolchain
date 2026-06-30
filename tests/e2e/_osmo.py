@@ -89,6 +89,12 @@ def submit_osmo_training(
             str(max_iterations),
             "--num-envs",
             str(num_envs),
+            # Smoke-sized to fit a single Standard_NC24ads_A100_v4 GPU node
+            # (24 vCPU / 220 GiB); the script default targets production headroom.
+            "--cpu",
+            "20",
+            "--memory",
+            "180Gi",
             "--correlation-id",
             correlation_id,
             "--skip-register-checkpoint",

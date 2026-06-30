@@ -110,7 +110,7 @@ default-values:
   register_checkpoint: ""
   training_backend: "skrl"
   gpu: "1"
-  cpu: "20"
-  memory: 180Gi
+  cpu: "30"
+  memory: 400Gi
   storage: 200Gi
 

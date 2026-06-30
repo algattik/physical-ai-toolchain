@@ -32,8 +32,8 @@ WORKFLOW OPTIONS:
 
 RESOURCE OPTIONS:
         --gpu COUNT               Number of GPUs (default: 1)
-        --cpu COUNT               CPU cores (default: 20)
-        --memory SIZE             Memory with unit (default: 180Gi)
+        --cpu COUNT               CPU cores (default: 30)
+        --memory SIZE             Memory with unit (default: 400Gi)
         --storage SIZE            Storage with unit (default: 200Gi)
 
 CHECKPOINT OPTIONS:
@@ -92,8 +92,8 @@ payload_root="${PAYLOAD_ROOT:-/workspace/isaac_payload}"
 backend="${TRAINING_BACKEND:-skrl}"
 
 gpu="${OSMO_GPU:-1}"
-cpu="${OSMO_CPU:-20}"
-memory="${OSMO_MEMORY:-180Gi}"
+cpu="${OSMO_CPU:-30}"
+memory="${OSMO_MEMORY:-400Gi}"
 storage="${OSMO_STORAGE:-200Gi}"
 
 checkpoint_uri="${CHECKPOINT_URI:-}"
