@@ -28,6 +28,12 @@ OSMO_STARTED_STATES = {"RUNNING", "COMPLETED", "SUCCEEDED"}
 OSMO_FAILURE_PREFIXES = ("FAILED",)
 OSMO_FAILURE_STATES = {"CANCELLED", "CANCELED", "ERROR"}
 
+# A workflow only reports RUNNING once its task container is live, so the "started"
+# wait must absorb a full cold scale-from-zero path: GPU node provisioning, NVIDIA
+# GPU-operator cold-start, and the isaac-lab image pull.
+OSMO_STARTED_TIMEOUT_MINUTES = 60
+OSMO_POLL_INTERVAL_SECONDS = 30
+
 OSMO_WORKFLOWS_NAMESPACE = "osmo-workflows"
 _POD_LOG_POLL_INTERVAL_SECONDS = 5
 
@@ -150,8 +156,8 @@ def wait_until_osmo_started(
     workflow: OSMOWorkflow,
     repo_root: Path,
     *,
-    timeout_minutes: int,
-    poll_interval_seconds: int,
+    timeout_minutes: int = OSMO_STARTED_TIMEOUT_MINUTES,
+    poll_interval_seconds: int = OSMO_POLL_INTERVAL_SECONDS,
 ) -> None:
     wait_for_status(
         lambda: _osmo_status(_fetch_osmo_workflow_payload(workflow, repo_root)),
@@ -169,7 +175,7 @@ def wait_until_osmo_completed(
     repo_root: Path,
     *,
     timeout_minutes: int,
-    poll_interval_seconds: int,
+    poll_interval_seconds: int = OSMO_POLL_INTERVAL_SECONDS,
 ) -> None:
     terminal_status = wait_for_status(
         lambda: _osmo_status(_fetch_osmo_workflow_payload(workflow, repo_root)),

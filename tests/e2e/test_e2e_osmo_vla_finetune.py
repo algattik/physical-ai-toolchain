@@ -55,10 +55,10 @@ def test_osmo_vla_finetune_e2e(
     request.addfinalizer(log_stream.stop)
 
     log_e2e(f"Waiting for OSMO VLA fine-tuning workflow {workflow.workflow_id} to start")
-    wait_until_osmo_started(workflow, repo_root, timeout_minutes=15, poll_interval_seconds=30)
+    wait_until_osmo_started(workflow, repo_root)
     log_e2e(f"Waiting for OSMO VLA fine-tuning workflow {workflow.workflow_id} to complete")
     # GR00T provisions its training environment inside the workflow before the short fine-tune starts.
-    wait_until_osmo_completed(workflow, repo_root, timeout_minutes=45, poll_interval_seconds=30)
+    wait_until_osmo_completed(workflow, repo_root, timeout_minutes=45)
     log_stream.stop()
     # MLflow mirroring only runs when Azure upload/model registration is enabled; this test omits those side effects.
     log_e2e("Skipping MLflow assertion because Azure upload/model registration is intentionally disabled")

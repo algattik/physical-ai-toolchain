@@ -59,9 +59,9 @@ def test_osmo_il_training_e2e(
     request.addfinalizer(log_stream.stop)
 
     log_e2e(f"Waiting for OSMO LeRobot workflow {workflow.workflow_id} to start")
-    wait_until_osmo_started(workflow, repo_root, timeout_minutes=15, poll_interval_seconds=30)
+    wait_until_osmo_started(workflow, repo_root)
     log_e2e(f"Waiting for OSMO LeRobot workflow {workflow.workflow_id} to complete")
-    wait_until_osmo_completed(workflow, repo_root, timeout_minutes=30, poll_interval_seconds=30)
+    wait_until_osmo_completed(workflow, repo_root, timeout_minutes=30)
     log_stream.stop()
     log_e2e("Validating OSMO LeRobot training MLflow tracking")
     assert_osmo_lerobot_training_has_mlflow_tracking(workflow, aml_workspace)
