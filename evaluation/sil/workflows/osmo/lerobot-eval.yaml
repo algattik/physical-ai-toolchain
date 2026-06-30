@@ -641,7 +641,12 @@ workflow:
                 # Discover image key from dataset features (camera = video/image feature)
                 features = info.get("features", {})
                 video_keys = [k for k, v in features.items() if v.get("dtype") in ("video", "image")]
-                image_key = video_keys[0] if video_keys else "observation.images.color"
+                # Prefer an observation.images.* key for a deterministic choice on
+                # multi-camera datasets; fall back to the first video/image feature.
+                image_key = next(
+                    (k for k in video_keys if k.startswith("observation.images.")),
+                    video_keys[0] if video_keys else "observation.images.color",
+                )
                 print(f"[INFO] Using image key: {image_key}")
 
                 # Load policy (LeRobot 0.3.x — normalize/unnormalize handled internally)
