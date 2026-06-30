@@ -160,7 +160,7 @@ $DependencyPatterns = @{
     }
 
     'shell-inline-pip' = @{
-        FilePatterns   = @('**/workflows/**/*.yaml', '**/*.sh')
+        FilePatterns   = @('**/workflows/**/*.yaml', '**/workflows/**/*.yml', '**/*.sh')
         ValidationFunc = 'Get-ShellInlinePipViolations'
         PinPattern     = '^.+==.+'
         RemediationUrl = 'https://pypi.org/pypi/{0}/{1}/json'
@@ -694,12 +694,16 @@ function Get-FilesToScan {
                 # Handle an interior ** (e.g. workflows/**/*.yaml): recurse for the leaf
                 # filter, then keep files whose relative path contains the required segment.
                 # Get-ChildItem cannot resolve ** as a mid-path directory segment.
+                # -Force is required so recursion descends into the dot-prefixed .github
+                # directory, where GitHub Actions workflows live; without it -Recurse skips
+                # hidden trees and .github/workflows/* is never scanned. Vendored hidden
+                # trees (.git, .venv, …) are pruned by the relative-path filter below.
                 if ($effectivePattern -match '/\*\*/') {
                     $segments = $effectivePattern -split '/\*\*/'
                     $requiredSegment = $segments[0]
                     $leafFilter = Split-Path $segments[-1] -Leaf
                     try {
-                        $interiorFiles = Get-ChildItem -Path $ScanPath -Filter $leafFilter -Recurse -File -ErrorAction SilentlyContinue |
+                        $interiorFiles = Get-ChildItem -Path $ScanPath -Filter $leafFilter -Recurse -File -Force -ErrorAction SilentlyContinue |
                             Where-Object {
                                 $rel = ([System.IO.Path]::GetRelativePath($ScanPath, $_.FullName)) -replace '\\', '/'
                                 ($rel -match "(^|/)$([regex]::Escape($requiredSegment))/") -and
