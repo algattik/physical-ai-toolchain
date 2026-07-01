@@ -37,6 +37,14 @@ import numpy as np
 import pyarrow.parquet as pq
 import torch
 
+# Resolve the shared helper as a sibling module whether this file is imported
+# as part of a package or run/loaded directly from the scripts directory.
+try:
+    from .lerobot_dataset import select_image_key
+except ImportError:
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    from lerobot_dataset import select_image_key  # type: ignore[no-redef]
+
 
 def _safe_throughput(inf_times: "np.ndarray | list[float]") -> float:
     """Return mean inverse latency in Hz, or 0.0 when latency is zero or invalid.
@@ -227,14 +235,8 @@ def run_evaluation(args: argparse.Namespace) -> None:
         info = json.load(f)
     fps = info["fps"]
 
-    # Prefer an observation.images.* camera, else the first video/image
-    # feature, else a conventional default.
     features = info.get("features", {})
-    video_keys = [k for k, v in features.items() if v.get("dtype") in ("video", "image")]
-    image_key = next(
-        (k for k in video_keys if k.startswith("observation.images.")),
-        video_keys[0] if video_keys else "observation.images.color",
-    )
+    image_key = select_image_key(features)
 
     action_dim = features.get("action", {}).get("shape", [0])[0]
     state_dim = features.get("observation.state", {}).get("shape", [0])[0]

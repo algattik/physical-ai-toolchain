@@ -9,6 +9,14 @@ from pathlib import Path
 import numpy as np
 import torch
 
+# Resolve the shared helper as a sibling module whether this file is imported
+# as part of a package or run/loaded directly from the scripts directory.
+try:
+    from .lerobot_dataset import select_image_key
+except ImportError:
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    from lerobot_dataset import select_image_key  # type: ignore[no-redef]
+
 JOINT_NAMES: list[str] = []
 
 
@@ -331,14 +339,7 @@ def main() -> int:
         info = json.load(f)
     fps = info["fps"]
 
-    # Identify image key: prefer an observation.images.* camera, else the
-    # first video/image feature, else a conventional default.
-    features = info.get("features", {})
-    video_keys = [k for k, v in features.items() if v.get("dtype") in ("video", "image")]
-    image_key = next(
-        (k for k in video_keys if k.startswith("observation.images.")),
-        video_keys[0] if video_keys else "observation.images.color",
-    )
+    image_key = select_image_key(info.get("features", {}))
 
     # Load policy (normalization is handled internally by select_action)
     print(f"[INFO] Loading policy from: {policy_repo_id}")
