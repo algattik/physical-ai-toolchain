@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# cspell:ignore RSTART RLENGTH
 # Print the unique, digest-pinned external base images referenced by FROM lines
 # across every Dockerfile in the repo (one per line). Stage aliases and
 # ARG/scratch bases carry no @sha256 digest and are excluded. Shared by

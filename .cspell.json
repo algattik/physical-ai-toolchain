@@ -17,6 +17,7 @@
 		"preds",
 		"prio",
 		"refetches",
+		"rescan",
 		"sdgcpu",
 		"trackio",
 		"unbuilt",
