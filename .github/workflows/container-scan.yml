@@ -45,14 +45,20 @@ jobs:
         id: extract
         run: |
           set -euo pipefail
-          images=$(git ls-files '*Dockerfile*' \
-            | xargs -r grep -hiE '^FROM[[:space:]]' \
-            | grep -oiE '[a-z0-9./_-]+(:[a-z0-9._-]+)?@sha256:[0-9a-f]{64}' \
-            | sort -u)
+          images=$(
+            git ls-files -z '*Dockerfile*' \
+              | xargs -0 -r grep -hiE '^FROM[[:space:]]' \
+              | grep -oiE '[a-z0-9./_-]+(:[a-z0-9._-]+)?@sha256:[0-9a-f]{64}' \
+              | sort -u || true
+          )
           echo "Discovered base images:"
           echo "$images"
           count=$(printf '%s' "$images" | grep -c . || true)
-          matrix=$(printf '%s\n' "$images" | jq -R . | jq -sc .)
+          if [[ -n "$images" ]]; then
+            matrix=$(printf '%s\n' "$images" | jq -R . | jq -sc .)
+          else
+            matrix='[]'
+          fi
           {
             echo "images=$matrix"
             echo "count=$count"
