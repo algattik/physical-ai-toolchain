@@ -68,25 +68,6 @@ derive_model_name() {
   printf '%s' "$1" | tr '[:upper:]' '[:lower:]' | sed -E 's/[^a-z0-9-]+/-/g; s/^-+//; s/-+$//; s/-+/-/g'
 }
 
-register_environment() {
-  local name="$1" version="$2" image="$3" rg="$4" ws="$5"
-  local env_file
-  env_file=$(mktemp)
-
-  cat >"$env_file" <<EOF
-\$schema: https://azuremlschemas.azureedge.net/latest/environment.schema.json
-name: $name
-version: $version
-image: $image
-EOF
-
-  info "Publishing AzureML environment ${name}:${version}"
-  az ml environment create --file "$env_file" \
-    --name "$name" --version "$version" \
-    --resource-group "$rg" --workspace-name "$ws" >/dev/null
-  rm -f "$env_file"
-}
-
 #------------------------------------------------------------------------------
 # Defaults
 #------------------------------------------------------------------------------
@@ -227,8 +208,8 @@ model_json=$(az ml model show \
 # Register Environment
 #------------------------------------------------------------------------------
 
-register_environment "$environment_name" "$environment_version" "$image" \
-  "$resource_group" "$workspace_name"
+register_azureml_environment "$environment_name" "$environment_version" "$image" \
+  "$resource_group" "$workspace_name" "$subscription_id"
 
 info "Code path: $code_path"
 info "Environment: ${environment_name}:${environment_version}"

@@ -188,6 +188,13 @@ workspace_name="${AZUREML_WORKSPACE_NAME:-$(get_azureml_workspace)}"
 mlflow_retries="${MLFLOW_TRACKING_TOKEN_REFRESH_RETRIES:-3}"
 mlflow_timeout="${MLFLOW_HTTP_REQUEST_TIMEOUT:-60}"
 
+# Base AzureML environment backing the pipeline components (they reference
+# azureml:lerobot-training-env:latest). Registered here so the pipeline is
+# standalone; defaults match submit-azureml-lerobot-training.sh.
+environment_name="${LEROBOT_ENVIRONMENT_NAME:-lerobot-training-env}"
+environment_version="${LEROBOT_ENVIRONMENT_VERSION:-1.0.0}"
+image="${IMAGE:-pytorch/pytorch:2.11.0-cuda12.8-cudnn9-runtime}"
+
 experiment_name=""
 display_name=""
 stream_logs=false
@@ -329,6 +336,7 @@ if [[ "$config_preview" == "true" ]]; then
   print_kv "Preprocessing Config" "${preprocessing_config:-<none>}"
   print_kv "Policy Type" "$policy_type"
   print_kv "Job Name" "$job_name"
+  print_kv "Environment" "${environment_name}:${environment_version}"
   print_kv "Policy Repo Id" "${policy_repo_id:-<none>}"
   print_kv "Training Steps" "${training_steps:-<default>}"
   print_kv "Batch Size" "${batch_size:-<default>}"
@@ -348,6 +356,14 @@ if [[ "$config_preview" == "true" ]]; then
   print_kv "Workspace" "$workspace_name"
   exit 0
 fi
+
+#------------------------------------------------------------------------------
+# Register Environment
+#------------------------------------------------------------------------------
+# The pipeline components reference azureml:lerobot-training-env:latest; publish
+# it so a fresh workspace can run the pipeline without a prior training job.
+register_azureml_environment "$environment_name" "$environment_version" "$image" \
+  "$resource_group" "$workspace_name" "$subscription_id"
 
 #------------------------------------------------------------------------------
 # Build Submission Command

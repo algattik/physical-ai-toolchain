@@ -295,6 +295,31 @@ ensure_namespace() {
   kubectl create namespace "$ns" --dry-run=client -o yaml | kubectl apply -f - >/dev/null
 }
 
+# Register (or refresh) an AzureML environment from a base container image.
+# Idempotent: an already-existing name:version is treated as success.
+register_azureml_environment() {
+  local name="${1:?environment name required}" version="${2:?environment version required}"
+  local image="${3:?image required}" rg="${4:?resource group required}"
+  local ws="${5:?workspace name required}" sub="${6:?subscription id required}"
+  local env_file
+  env_file=$(mktemp)
+
+  cat >"$env_file" <<EOF
+\$schema: https://azuremlschemas.azureedge.net/latest/environment.schema.json
+name: $name
+version: $version
+image: $image
+EOF
+
+  info "Publishing AzureML environment ${name}:${version}"
+  az ml environment create --file "$env_file" \
+    --name "$name" --version "$version" \
+    --resource-group "$rg" --workspace-name "$ws" \
+    --subscription "$sub" >/dev/null 2>&1 ||
+    warn "Environment ${name}:${version} already exists or registration failed; continuing"
+  rm -f "$env_file"
+}
+
 # Login to Azure Container Registry
 login_acr() {
   local acr="${1:?acr name required}"

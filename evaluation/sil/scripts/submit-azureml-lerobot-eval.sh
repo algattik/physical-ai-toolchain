@@ -119,26 +119,6 @@ ensure_ml_extension() {
     fatal "Azure ML CLI extension not installed. Run: az extension add --name ml"
 }
 
-register_environment() {
-  local name="$1" version="$2" image="$3" rg="$4" ws="$5" sub="$6"
-  local env_file
-  env_file=$(mktemp)
-
-  cat >"$env_file" <<EOF
-\$schema: https://azuremlschemas.azureedge.net/latest/environment.schema.json
-name: $name
-version: $version
-image: $image
-EOF
-
-  info "Publishing AzureML environment ${name}:${version}"
-  az ml environment create --file "$env_file" \
-    --name "$name" --version "$version" \
-    --resource-group "$rg" --workspace-name "$ws" \
-    --subscription "$sub" >/dev/null 2>&1 || \
-    warn "Environment ${name}:${version} already exists or registration failed; continuing"
-  rm -f "$env_file"
-}
 
 #------------------------------------------------------------------------------
 # Defaults
@@ -298,7 +278,7 @@ fi
 # Register Environment
 #------------------------------------------------------------------------------
 
-register_environment "$environment_name" "$environment_version" "$image" \
+register_azureml_environment "$environment_name" "$environment_version" "$image" \
   "$resource_group" "$workspace_name" "$subscription_id"
 
 info "Environment: ${environment_name}:${environment_version}"
