@@ -149,7 +149,8 @@ workflow:
             # Download dataset from Azure Blob Storage when configured
             if [[ "${BLOB_DATASOURCE}" == "1" ]]; then
               echo "Downloading dataset from Azure Blob Storage..."
-              python -m training.il.scripts.lerobot.download_dataset
+              # Fail closed when a blob dataset lacks its integrity manifest.
+              REQUIRE_CHECKSUMS=1 python -m training.il.scripts.lerobot.download_dataset
 
               FULL_DATASET_PATH="${DATASET_ROOT}/${DATASET_REPO_ID}"
               echo "Dataset downloaded to: ${FULL_DATASET_PATH}"

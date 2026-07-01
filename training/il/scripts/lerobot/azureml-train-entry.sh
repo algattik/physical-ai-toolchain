@@ -145,7 +145,8 @@ fi
 blob_paths=()
 if python3 -c 'from training.il.scripts.lerobot._env import has_blob_urls; raise SystemExit(0 if has_blob_urls() else 1)'; then
   echo "Downloading datasets from Azure Blob Storage..."
-  python3 -m training.il.scripts.lerobot.download_dataset
+  # Fail closed when a blob dataset lacks its integrity manifest.
+  REQUIRE_CHECKSUMS=1 python3 -m training.il.scripts.lerobot.download_dataset
   FULL_DATASET_PATH="${DATASET_ROOT:-/workspace/data}/${DATASET_REPO_ID}"
   echo "Dataset materialized at: ${FULL_DATASET_PATH}"
   blob_paths+=("${FULL_DATASET_PATH}")

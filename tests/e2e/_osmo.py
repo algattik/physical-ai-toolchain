@@ -705,14 +705,7 @@ def _stage_synthetic_vla_dataset(request: pytest.FixtureRequest, repo_root: Path
 
     prefix = f"e2e-vla-datasets/{e2e_name('vla-finetune')}"
     log_e2e(f"Uploading synthetic GR00T dataset to {storage_account}/{container}/{prefix}")
-    upload_blob_directory(
-        repo_root,
-        storage_account,
-        container,
-        prefix,
-        dataset_dir,
-        description="synthetic VLA dataset",
-    )
+    # Register cleanup before the upload so a partial upload is still torn down.
     request.addfinalizer(
         lambda: delete_blob_prefix(
             repo_root,
@@ -721,6 +714,14 @@ def _stage_synthetic_vla_dataset(request: pytest.FixtureRequest, repo_root: Path
             prefix,
             description="staged synthetic VLA dataset",
         )
+    )
+    upload_blob_directory(
+        repo_root,
+        storage_account,
+        container,
+        prefix,
+        dataset_dir,
+        description="synthetic VLA dataset",
     )
 
     blob_url = f"https://{storage_account}.blob.core.windows.net/{container}/{prefix}"

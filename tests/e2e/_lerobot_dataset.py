@@ -440,14 +440,7 @@ def stage_synthetic_lerobot_dataset(
 
     prefix = f"e2e-il-datasets/{e2e_name('lerobot')}"
     log_e2e(f"Uploading synthetic LeRobot dataset to {storage_account}/{container}/{prefix}")
-    upload_blob_directory(
-        repo_root,
-        storage_account,
-        container,
-        prefix,
-        dataset_dir,
-        description="synthetic LeRobot dataset",
-    )
+    # Register cleanup before the upload so a partial upload is still torn down.
     request.addfinalizer(
         lambda: delete_blob_prefix(
             repo_root,
@@ -456,6 +449,14 @@ def stage_synthetic_lerobot_dataset(
             prefix,
             description="staged synthetic LeRobot dataset",
         )
+    )
+    upload_blob_directory(
+        repo_root,
+        storage_account,
+        container,
+        prefix,
+        dataset_dir,
+        description="synthetic LeRobot dataset",
     )
 
     return StagedDataset(storage_account=storage_account, container=container, prefix=prefix)

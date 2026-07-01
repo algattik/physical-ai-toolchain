@@ -4,12 +4,15 @@
 Bare ``repo_id`` calls resolve a mutable HEAD, so an upstream account or org
 compromise can silently ship new weights or a poisoned dataset into evaluation
 and deployed inference. This guard parses the AST of production ``.py`` and ``.sh``
-files and of inline Python heredocs (``python3 << 'DELIM'`` as well as the piped
-``cat <<'DELIM' | python3`` form) and ``python -c "..."`` one-liners embedded in
+files and of inline Python heredocs (``python3 << 'DELIM'``, the piped
+``cat <<'DELIM' | python3`` form, and a ``cat > dl.py <<'DELIM'`` body written to a
+``.py`` file) and ``python -c "..."`` one-liners embedded in
 workflow YAML and shell scripts — the OSMO download paths live there, invisible to
 a ``.py``-only walk — and rejects any
 ``from_pretrained`` / ``snapshot_download`` / ``hf_hub_download`` call that has no
-explicit ``revision`` keyword. A literal ``revision=None`` is rejected too: it is
+explicit ``revision`` keyword. Calls reached through an import alias
+(``import snapshot_download as dl``) or a simple rebinding (``grab = snapshot_download``)
+are resolved and checked too. A literal ``revision=None`` is rejected as well: it is
 provably unpinned. A ``**kwargs`` splat is accepted, since it cannot be resolved
 statically.
 
@@ -44,10 +47,14 @@ _EXCLUDED_PARTS = frozenset({"tests", "external", "node_modules", ".venv", ".git
 
 # Heredoc opener ``<< 'DELIM'`` / ``<<-"DELIM"`` / ``<<DELIM``, matched independently of
 # the command that consumes the body so both ``python3 <<'DELIM'`` and the piped
-# ``cat <<'DELIM' | python3`` forms are covered. ``_python_heredocs`` additionally requires
-# a ``python`` invocation on the opener line before treating the body as Python.
+# ``cat <<'DELIM' | python3`` forms are covered. ``_python_heredocs`` treats the body as
+# Python when the opener either invokes ``python`` or redirects the body into a ``.py`` file.
 _HEREDOC_OPENER_RE = re.compile(r"<<-?\s*['\"]?(\w+)['\"]?(?:\s|$)")
 _PYTHON_TOKEN_RE = re.compile(r"\bpython3?\b")
+# Redirect of the heredoc body into a ``.py`` file (``> dl.py`` / ``>> dl.py``): an
+# unambiguous signal the body is Python that a later ``python <file>`` line will execute,
+# so ``cat > dl.py <<'DELIM'`` is not a way to smuggle an unpinned download past the guard.
+_PY_FILE_REDIRECT_RE = re.compile(r">>?\s*[^\s|&;<>]+\.py(?:\s|$)")
 
 
 class ScanError(RuntimeError):
@@ -69,6 +76,61 @@ def _callee_name(node: ast.Call) -> str | None:
     if isinstance(func, ast.Name):
         return func.id
     return None
+
+
+def _assign_target_names(node: ast.Assign | ast.AnnAssign) -> Iterator[str]:
+    """Yield the simple ``Name`` targets bound by an assignment."""
+    targets = node.targets if isinstance(node, ast.Assign) else [node.target]
+    for target in targets:
+        if isinstance(target, ast.Name):
+            yield target.id
+
+
+def _value_binds_guarded(value: ast.expr | None, bound: set[str]) -> bool:
+    """True if ``value`` references a guarded function directly, by attribute, or via an alias."""
+    if isinstance(value, ast.Attribute):
+        return value.attr in _GUARDED_FUNCTIONS
+    if isinstance(value, ast.Name):
+        return value.id in _GUARDED_FUNCTIONS or value.id in bound
+    return False
+
+
+def _guarded_bound_names(tree: ast.Module) -> set[str]:
+    """Collect local names bound to a guarded function via import alias or assignment.
+
+    ``from hub import snapshot_download as dl`` and ``grab = snapshot_download`` both make an
+    unpinned ``dl(...)`` / ``grab(...)`` resolve the guarded function, so calls to those names
+    must be checked too. Chained rebindings are resolved to a fixpoint.
+    """
+    bound: set[str] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.ImportFrom):
+            for alias in node.names:
+                if alias.name in _GUARDED_FUNCTIONS:
+                    bound.add(alias.asname or alias.name)
+
+    assignments = [node for node in ast.walk(tree) if isinstance(node, (ast.Assign, ast.AnnAssign))]
+    changed = True
+    while changed:
+        changed = False
+        for node in assignments:
+            if not _value_binds_guarded(node.value, bound):
+                continue
+            for name in _assign_target_names(node):
+                if name not in bound:
+                    bound.add(name)
+                    changed = True
+    return bound
+
+
+def _is_guarded_call(node: ast.Call, bound: set[str]) -> bool:
+    """True if the call targets a guarded function directly, by attribute, or via an alias."""
+    name = _callee_name(node)
+    if name is None:
+        return False
+    if name in _GUARDED_FUNCTIONS:
+        return True
+    return isinstance(node.func, ast.Name) and name in bound
 
 
 def _has_revision(node: ast.Call) -> bool:
@@ -95,13 +157,13 @@ def _violations_in_source(source: str, filename: str) -> list[tuple[int, int, st
         line = error.lineno or 0
         raise ScanError(f"unable to parse Python source at line {line}") from error
 
+    bound = _guarded_bound_names(tree)
     found = []
     for node in ast.walk(tree):
         if not isinstance(node, ast.Call):
             continue
-        name = _callee_name(node)
-        if name in _GUARDED_FUNCTIONS and not _has_revision(node):
-            found.append((node.lineno, node.col_offset, name))
+        if _is_guarded_call(node, bound) and not _has_revision(node):
+            found.append((node.lineno, node.col_offset, _callee_name(node) or "?"))
     return found
 
 
@@ -109,15 +171,17 @@ def _python_heredocs(text: str) -> Iterator[tuple[int, str]]:
     """Yield ``(body_start_lineno, dedented_source)`` for each Python heredoc.
 
     OSMO workflow YAML and shell entry scripts embed their real download code as
-    ``python3 << 'DELIM'`` heredocs (or the piped ``cat <<'DELIM' | python3`` form);
-    a quoted delimiter means the body is literal Python. Line numbers are 1-based
+    ``python3 << 'DELIM'`` heredocs (or the piped ``cat <<'DELIM' | python3`` form, or a
+    ``cat > dl.py <<'DELIM'`` body written to a ``.py`` file that a later ``python dl.py``
+    runs); a quoted delimiter means the body is literal Python. Line numbers are 1-based
     against the source file so AST positions map back correctly.
     """
     lines = text.splitlines()
     i = 0
     while i < len(lines):
-        match = _HEREDOC_OPENER_RE.search(lines[i])
-        if not match or not _PYTHON_TOKEN_RE.search(lines[i]):
+        opener = lines[i]
+        match = _HEREDOC_OPENER_RE.search(opener)
+        if not match or not (_PYTHON_TOKEN_RE.search(opener) or _PY_FILE_REDIRECT_RE.search(opener)):
             i += 1
             continue
         delimiter = match.group(1)

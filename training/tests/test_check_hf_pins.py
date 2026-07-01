@@ -83,6 +83,51 @@ class TestHasRevision:
         assert "Files could not be scanned" in capsys.readouterr().err
 
 
+class TestAliasResolution:
+    def test_flags_aliased_import(self, tmp_path: Path) -> None:
+        # ``import snapshot_download as dl`` then a bare ``dl(...)`` resolves the mutable HEAD.
+        root = tmp_path / "evaluation"
+        root.mkdir()
+        (root / "mod.py").write_text(
+            "from huggingface_hub import snapshot_download as dl\ndl(repo_id='x')\n",
+            encoding="utf-8",
+        )
+
+        assert _MOD.main(["check_hf_pins.py", str(root)]) == 1
+
+    def test_accepts_pinned_aliased_import(self, tmp_path: Path) -> None:
+        root = tmp_path / "evaluation"
+        root.mkdir()
+        (root / "mod.py").write_text(
+            "from huggingface_hub import snapshot_download as dl\ndl(repo_id='x', revision=rev)\n",
+            encoding="utf-8",
+        )
+
+        assert _MOD.main(["check_hf_pins.py", str(root)]) == 0
+
+    def test_flags_reassigned_name(self, tmp_path: Path) -> None:
+        # A simple rebinding ``grab = snapshot_download`` must not launder away the pin.
+        root = tmp_path / "evaluation"
+        root.mkdir()
+        (root / "mod.py").write_text(
+            "from huggingface_hub import snapshot_download\ngrab = snapshot_download\ngrab(repo_id='x')\n",
+            encoding="utf-8",
+        )
+
+        assert _MOD.main(["check_hf_pins.py", str(root)]) == 1
+
+    def test_flags_chained_rebinding(self, tmp_path: Path) -> None:
+        # Rebindings are resolved transitively to a fixpoint.
+        root = tmp_path / "evaluation"
+        root.mkdir()
+        (root / "mod.py").write_text(
+            "from huggingface_hub import snapshot_download as dl\nalias = dl\nalias(repo_id='x')\n",
+            encoding="utf-8",
+        )
+
+        assert _MOD.main(["check_hf_pins.py", str(root)]) == 1
+
+
 class TestYamlHeredocs:
     def test_flags_bare_call_in_workflow_heredoc(self, tmp_path: Path) -> None:
         # OSMO workflow YAML embeds real download calls in python heredocs.
@@ -153,6 +198,28 @@ class TestYamlHeredocs:
         )
 
         assert _MOD.main(["check_hf_pins.py", str(tmp_path / "training")]) == 1
+
+
+    def test_flags_heredoc_written_to_py_file(self, tmp_path: Path) -> None:
+        # ``cat > dl.py <<'PY' ... PY`` then ``python dl.py`` must not hide an unpinned call.
+        root = tmp_path / "training"
+        root.mkdir()
+        (root / "entry.sh").write_text(
+            "cat > /tmp/dl.py <<'PY'\nsnapshot_download(repo_id='x')\nPY\npython3 /tmp/dl.py\n",
+            encoding="utf-8",
+        )
+
+        assert _MOD.main(["check_hf_pins.py", str(root)]) == 1
+
+    def test_accepts_pinned_heredoc_written_to_py_file(self, tmp_path: Path) -> None:
+        root = tmp_path / "training"
+        root.mkdir()
+        (root / "entry.sh").write_text(
+            "cat > /tmp/dl.py <<'PY'\nsnapshot_download(repo_id='x', revision=rev)\nPY\npython3 /tmp/dl.py\n",
+            encoding="utf-8",
+        )
+
+        assert _MOD.main(["check_hf_pins.py", str(root)]) == 0
 
 
 class TestYamlInlineC:
