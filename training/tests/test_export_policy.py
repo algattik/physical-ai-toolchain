@@ -229,9 +229,9 @@ class TestSha256Sidecar:
         assert Path(sidecar).read_text(encoding="utf-8") == f"{expected}  policy.pt\n"
 
     def test_load_rejects_weights_only_incompatible_payload(self, tmp_path: Path) -> None:
-        # weights_only=True must refuse a pickle carrying an arbitrary object —
-        # the RCE vector G2 closes. argparse.Namespace is picklable but not in
-        # torch's safe-globals allowlist, so the load is rejected before use.
+        # weights_only=True must refuse a pickle carrying an arbitrary object.
+        # argparse.Namespace is picklable but not in torch's safe-globals allowlist,
+        # so the load is rejected before use.
         import argparse
         import pickle
 

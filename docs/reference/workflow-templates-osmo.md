@@ -2,7 +2,7 @@
 title: Workflow Templates (OSMO)
 description: Canonical OSMO workflow template reference for training and evaluation jobs.
 author: Microsoft Robotics-AI Team
-ms.date: 2026-06-24
+ms.date: 2026-07-01
 ms.topic: reference
 keywords:
   - osmo

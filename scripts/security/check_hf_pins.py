@@ -3,10 +3,11 @@
 
 Bare ``repo_id`` calls resolve a mutable HEAD, so an upstream account or org
 compromise can silently ship new weights or a poisoned dataset into evaluation
-and deployed inference. This guard parses the AST of production ``.py`` files and
-of inline ``python3 << 'DELIM'`` heredocs and ``python -c "..."`` one-liners
-embedded in workflow YAML — the OSMO download paths live there, invisible to a
-``.py``-only walk — and rejects any
+and deployed inference. This guard parses the AST of production ``.py`` and ``.sh``
+files and of inline Python heredocs (``python3 << 'DELIM'`` as well as the piped
+``cat <<'DELIM' | python3`` form) and ``python -c "..."`` one-liners embedded in
+workflow YAML and shell scripts — the OSMO download paths live there, invisible to
+a ``.py``-only walk — and rejects any
 ``from_pretrained`` / ``snapshot_download`` / ``hf_hub_download`` call that has no
 explicit ``revision`` keyword. A literal ``revision=None`` is rejected too: it is
 provably unpinned. A ``**kwargs`` splat is accepted, since it cannot be resolved
@@ -41,12 +42,12 @@ _DEFAULT_ROOTS = (
 
 _EXCLUDED_PARTS = frozenset({"tests", "external", "node_modules", ".venv", ".git"})
 
-# ``python3 << 'DELIM'``, ``python3 - <<'DELIM'``, ``python -u <<-"DELIM"`` heredoc
-# opener in workflow YAML. The optional ``[^<\n]*`` allows the stdin ``-`` marker and
-# any interpreter flags that commonly precede the redirection. A trailing token after
-# the delimiter (a redirect ``> log`` or pipe ``| tee``) is allowed so those forms are
-# not silently skipped.
-_HEREDOC_RE = re.compile(r"\bpython3?\s+(?:[^<\n]*\s)?<<-?\s*['\"]?(\w+)['\"]?(?:\s|$)")
+# Heredoc opener ``<< 'DELIM'`` / ``<<-"DELIM"`` / ``<<DELIM``, matched independently of
+# the command that consumes the body so both ``python3 <<'DELIM'`` and the piped
+# ``cat <<'DELIM' | python3`` forms are covered. ``_python_heredocs`` additionally requires
+# a ``python`` invocation on the opener line before treating the body as Python.
+_HEREDOC_OPENER_RE = re.compile(r"<<-?\s*['\"]?(\w+)['\"]?(?:\s|$)")
+_PYTHON_TOKEN_RE = re.compile(r"\bpython3?\b")
 
 
 class ScanError(RuntimeError):
@@ -107,15 +108,16 @@ def _violations_in_source(source: str, filename: str) -> list[tuple[int, int, st
 def _python_heredocs(text: str) -> Iterator[tuple[int, str]]:
     """Yield ``(body_start_lineno, dedented_source)`` for each Python heredoc.
 
-    OSMO workflow YAML embeds its real download code as ``python3 << 'DELIM'``
-    heredocs; the quoted delimiter means the body is literal Python. Line numbers
-    are 1-based against the YAML file so AST positions map back correctly.
+    OSMO workflow YAML and shell entry scripts embed their real download code as
+    ``python3 << 'DELIM'`` heredocs (or the piped ``cat <<'DELIM' | python3`` form);
+    a quoted delimiter means the body is literal Python. Line numbers are 1-based
+    against the source file so AST positions map back correctly.
     """
     lines = text.splitlines()
     i = 0
     while i < len(lines):
-        match = _HEREDOC_RE.search(lines[i])
-        if not match:
+        match = _HEREDOC_OPENER_RE.search(lines[i])
+        if not match or not _PYTHON_TOKEN_RE.search(lines[i]):
             i += 1
             continue
         delimiter = match.group(1)
@@ -157,12 +159,14 @@ def _python_inline_c(text: str) -> Iterator[tuple[int, str]]:
             break
 
 
-def _violations_in_inline(code: str, filename: str) -> list[tuple[int, int, str]]:
-    """Scan a ``python -c`` payload, failing closed only when a guarded call is unverifiable.
+def _violations_in_snippet(code: str, filename: str) -> list[tuple[int, int, str]]:
+    """Scan an embedded Python snippet, failing closed only when a guarded call is unverifiable.
 
-    Inline snippets frequently contain shell ``${VAR}`` interpolation that is not
-    valid Python; such a snippet is skipped. But if it mentions a guarded function,
-    an unparseable payload is a hard failure rather than a silent bypass.
+    Heredoc bodies and ``python -c`` payloads frequently contain shell ``${VAR}``
+    interpolation or plain non-Python text that does not parse; such a snippet is
+    skipped. But if it mentions a guarded function, an unparseable payload is a hard
+    failure rather than a silent bypass. A snippet that names no guarded function
+    cannot hide a guarded call, so skipping it is safe.
     """
     try:
         return _violations_in_source(code, filename)
@@ -178,13 +182,13 @@ def _violations_in_file(path: Path) -> list[tuple[int, int, str]]:
     except UnicodeDecodeError as error:
         raise ScanError("unable to decode as UTF-8") from error
 
-    if path.suffix in (".yaml", ".yml"):
+    if path.suffix in (".yaml", ".yml", ".sh"):
         found = []
         for offset, block in _python_heredocs(text):
-            for lineno, col, name in _violations_in_source(block, str(path)):
+            for lineno, col, name in _violations_in_snippet(block, str(path)):
                 found.append((offset + lineno - 1, col, name))
         for lineno, code in _python_inline_c(text):
-            for _code_lineno, col, name in _violations_in_inline(code, str(path)):
+            for _code_lineno, col, name in _violations_in_snippet(code, str(path)):
                 found.append((lineno, col, name))
         return found
 
@@ -192,8 +196,9 @@ def _violations_in_file(path: Path) -> list[tuple[int, int, str]]:
 
 
 def _iter_source_files(root: Path) -> Iterator[Path]:
-    """Yield production ``.py`` files plus workflow YAML carrying Python heredocs."""
+    """Yield production ``.py`` and ``.sh`` files plus workflow YAML carrying Python heredocs."""
     yield from root.rglob("*.py")
+    yield from root.rglob("*.sh")
     for suffix in ("*.yaml", "*.yml"):
         for path in root.rglob(suffix):
             if "workflows" in path.parts:

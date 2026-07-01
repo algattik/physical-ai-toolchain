@@ -549,9 +549,7 @@ def _lerobot_eval_model_source_args() -> tuple[list[str], str]:
     if policy_repo_id:
         policy_revision = env_value(_LEROBOT_EVAL_POLICY_REVISION_ENV)
         if not policy_revision:
-            pytest.skip(
-                f"{_LEROBOT_EVAL_POLICY_REVISION_ENV} is required when {_LEROBOT_EVAL_POLICY_REPO_ENV} is set"
-            )
+            pytest.skip(f"{_LEROBOT_EVAL_POLICY_REVISION_ENV} is required when {_LEROBOT_EVAL_POLICY_REPO_ENV} is set")
         return [
             "--policy-repo-id",
             policy_repo_id,

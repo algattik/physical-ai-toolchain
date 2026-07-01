@@ -7,6 +7,8 @@ model before Azure ML deployment.
 Supports both ONNX and TorchScript (JIT) model formats.
 """
 
+from __future__ import annotations
+
 """Launch Isaac Sim Simulator first."""
 
 import argparse
@@ -203,15 +205,21 @@ class RslRl3xCompatWrapper:
 
 
 def _verify_model_integrity(model_path: str) -> None:
-    """Verify an exported model against its sidecar SHA256 before loading.
+    """Verify an exported model against its co-located sidecar SHA256 before loading.
 
     Both ``torch.jit.load`` (TorchScript) and ``ort.InferenceSession`` (ONNX)
-    consume attacker-influenceable model files — a substituted TorchScript model is
-    a code-execution vector, and a substituted ONNX model yields attacker-controlled
+    consume attacker-influenceable model files — a corrupted TorchScript model is a
+    code-execution vector, and a corrupted ONNX model yields attacker-controlled
     robot actions. ``export_policy.py`` writes ``<path>.sha256`` (``sha256sum``
-    format) next to every exported model; the load is rejected on mismatch. A
-    missing sidecar is a hard failure for integrity-gated inputs — pass a sidecar
-    produced by the export pipeline.
+    format) next to every exported model; the load is rejected on mismatch.
+
+    Scope: the sidecar shares the model's directory and therefore its trust domain,
+    so this defends against accidental corruption and partial writes — not against an
+    attacker with write access to the artifact store, who can rewrite the co-located
+    ``.sha256`` to match a poisoned model. For that threat the sidecar digest must be
+    pinned out-of-band (e.g. an AzureML model-asset property) and checked before the
+    sidecar is trusted. A missing sidecar is a hard failure for integrity-gated
+    inputs — pass a sidecar produced by the export pipeline.
 
     Raises:
         FileNotFoundError: If the sidecar manifest is absent.

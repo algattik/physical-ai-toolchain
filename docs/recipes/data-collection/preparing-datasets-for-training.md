@@ -60,6 +60,15 @@ python download_dataset.py
 
 The script uses `DefaultAzureCredential` for authentication. It downloads all dataset files, skipping cache and lock files, and preserves the directory structure.
 
+> [!NOTE]
+> The download verifies every file against a `meta/checksums.sha256` integrity manifest when one is present, and rejects tampered, missing, or unlisted files. Generate the manifest on the prepared dataset immediately before uploading it to Azure Blob so the upload carries it:
+>
+> ```bash
+> python download_dataset.py --write-manifest ./datasets/my-org/my-dataset
+> ```
+>
+> Set `REQUIRE_CHECKSUMS=1` to make an absent manifest a hard failure for integrity-gated environments rather than a warning.
+
 ### Step 3: Inspect the dataset structure
 
 A valid LeRobot dataset follows this directory layout:
@@ -156,11 +165,12 @@ The recipe succeeded when:
 
 `download_dataset.py` environment variables:
 
-| Variable          | Required | Default           | Description                                    |
-|-------------------|----------|-------------------|------------------------------------------------|
-| `BLOB_URLS`       | yes      | —                 | Non-empty JSON array of direct Azure Blob URLs |
-| `DATASET_ROOT`    | no       | `/workspace/data` | Local root directory for datasets              |
-| `DATASET_REPO_ID` | yes      | —                 | Dataset identifier relative to `DATASET_ROOT`  |
+| Variable            | Required | Default           | Description                                                                                                      |
+|---------------------|----------|-------------------|------------------------------------------------------------------------------------------------------------------|
+| `BLOB_URLS`         | yes      | —                 | Non-empty JSON array of direct Azure Blob URLs                                                                   |
+| `DATASET_ROOT`      | no       | `/workspace/data` | Local root directory for datasets                                                                                |
+| `DATASET_REPO_ID`   | yes      | —                 | Dataset identifier relative to `DATASET_ROOT`                                                                    |
+| `REQUIRE_CHECKSUMS` | no       | —                 | When truthy (`1`/`true`/`yes`), an absent `meta/checksums.sha256` manifest fails the download instead of warning |
 
 ## 🔗 Related Recipes
 

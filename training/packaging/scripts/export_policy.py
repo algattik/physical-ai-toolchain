@@ -218,8 +218,11 @@ def load_actor_from_checkpoint(
 def _write_sha256_sidecar(filepath: str) -> str:
     """Write a ``sha256sum``-format ``<filepath>.sha256`` next to ``filepath``.
 
-    Consumed by ``play_policy._verify_model_integrity`` to reject a substituted
-    model (TorchScript or ONNX) before it is deserialized/loaded.
+    Consumed by ``play_policy._verify_model_integrity`` to detect a corrupted model
+    (TorchScript or ONNX) before it is deserialized/loaded. The sidecar is co-located
+    with the model, so it guards against accidental corruption and partial writes,
+    not against an attacker who can rewrite both; see that function's docstring for
+    the out-of-band pinning needed to cover substitution.
 
     Returns:
         Path to the written sidecar.

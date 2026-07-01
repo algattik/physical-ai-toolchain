@@ -957,5 +957,26 @@ def prepare_dataset() -> Path:
     return final
 
 
+def main(argv: list[str]) -> int:
+    """CLI entry: download and prepare by default, or write a checksum manifest.
+
+    ``--write-manifest <dataset_dir>`` writes ``meta/checksums.sha256`` for a prepared
+    dataset so the copy staged to Azure Blob carries the manifest that
+    :func:`download_dataset` verifies at training time; run it against the local
+    dataset immediately before uploading. With no arguments the module runs the
+    download/prepare workflow driven by ``BLOB_URLS``/``DATASET_REPO_ID``.
+    """
+    if argv and argv[0] == "--write-manifest":
+        if len(argv) != 2:
+            print("Usage: download_dataset.py --write-manifest <dataset_dir>", file=sys.stderr)
+            return EXIT_FAILURE
+        manifest = write_checksum_manifest(Path(argv[1]))
+        print(f"Wrote {manifest}")
+        return EXIT_SUCCESS
+
+    prepare_dataset()
+    return EXIT_SUCCESS
+
+
 if __name__ == "__main__":
-    sys.exit(EXIT_SUCCESS if prepare_dataset() else EXIT_FAILURE)
+    sys.exit(main(sys.argv[1:]))

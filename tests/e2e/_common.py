@@ -10,6 +10,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+_MAX_CONSECUTIVE_STATUS_ERRORS = 5
+
 
 def e2e_name(prefix: str) -> str:
     """Generate a collision-resistant resource name for an e2e run."""
@@ -164,8 +166,20 @@ def wait_for_status(
 
     log_e2e(f"Waiting for {goal_description} for up to {timeout_minutes} minutes (poll every {poll_interval_seconds}s)")
 
+    consecutive_errors = 0
     while time.monotonic() < deadline:
-        last_status = fetch_status()
+        try:
+            last_status = fetch_status()
+        except Exception as error:
+            # A single throttled/blipped status query must not abort a 30-60 minute
+            # live poll; only a persistent failure run is treated as fatal.
+            consecutive_errors += 1
+            log_e2e(f"Status fetch failed ({consecutive_errors}/{_MAX_CONSECUTIVE_STATUS_ERRORS}): {error}")
+            if consecutive_errors >= _MAX_CONSECUTIVE_STATUS_ERRORS:
+                raise
+            time.sleep(poll_interval_seconds)
+            continue
+        consecutive_errors = 0
         normalized_status = last_status.upper()
 
         if log_status_changes and last_status != previous_status:
