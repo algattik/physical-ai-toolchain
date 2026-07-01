@@ -86,6 +86,20 @@ class TestInferArchitectureFromCheckpoint:
 
         assert arch == _MOD.PolicyArchitecture(obs_dim=3, action_dim=2, hidden_dims=[5, 4], activation="elu")
 
+    def test_loads_checkpoint_with_non_model_keys(self, tmp_path: Path) -> None:
+        # Real RSL-RL checkpoints carry optimizer_state_dict/iter/infos beside
+        # model_state_dict; weights_only=True must still load these safe-typed extras.
+        checkpoint_path = tmp_path / "realistic.pt"
+        state = _checkpoint_state()
+        state["optimizer_state_dict"] = {"state": {}, "param_groups": [{"lr": 1e-3, "params": [0]}]}
+        state["iter"] = 100
+        state["infos"] = None
+        torch.save(state, checkpoint_path)
+
+        arch = _MOD.infer_architecture_from_checkpoint(str(checkpoint_path))
+
+        assert arch == _MOD.PolicyArchitecture(obs_dim=3, action_dim=2, hidden_dims=[5, 4], activation="elu")
+
     def test_rejects_checkpoint_without_model_state_dict(self, tmp_path: Path) -> None:
         checkpoint_path = tmp_path / "missing-state.pt"
         torch.save({"epoch": 3}, checkpoint_path)
@@ -231,12 +245,13 @@ class TestSha256Sidecar:
     def test_load_rejects_weights_only_incompatible_payload(self, tmp_path: Path) -> None:
         # weights_only=True must refuse a pickle carrying an arbitrary object.
         # argparse.Namespace is picklable but not in torch's safe-globals allowlist,
-        # so the load is rejected before use.
+        # so the load is rejected and surfaced as an actionable error that chains the cause.
         import argparse
         import pickle
 
         checkpoint_path = tmp_path / "evil.pt"
         torch.save({"model_state_dict": {}, "payload": argparse.Namespace(cmd="rm -rf /")}, checkpoint_path)
 
-        with pytest.raises(pickle.UnpicklingError):
+        with pytest.raises(ValueError, match="add_safe_globals") as excinfo:
             _MOD.infer_architecture_from_checkpoint(str(checkpoint_path))
+        assert isinstance(excinfo.value.__cause__, pickle.UnpicklingError)

@@ -265,6 +265,33 @@ class TestLoadRslRl:
         rsl_rl_modules.ActorCritic.assert_called_once_with(a=1)
         policy.load_state_dict.assert_called_once_with({"w": 0})
         policy.eval.assert_called_once()
+
+    def test_loads_realistic_multi_key_checkpoint(self, tmp_path: Path) -> None:
+        # A real RSL-RL checkpoint carries optimizer_state_dict/iter/infos beyond
+        # model_cfg/model_state_dict; weights_only=True must deserialize it (no mocked
+        # torch.load) before ActorCritic is constructed.
+        rsl_rl_modules = MagicMock()
+        policy = MagicMock()
+        policy.to.return_value = policy
+        rsl_rl_modules.ActorCritic.return_value = policy
+        checkpoint_path = tmp_path / "realistic.pt"
+        torch.save(
+            {
+                "model_cfg": {"a": 1},
+                "model_state_dict": {"w": torch.zeros(2)},
+                "optimizer_state_dict": {"state": {}, "param_groups": [{"lr": 1e-3, "params": [0]}]},
+                "iter": 100,
+                "infos": None,
+            },
+            checkpoint_path,
+        )
+
+        with patch.dict(sys.modules, {"rsl_rl": MagicMock(), "rsl_rl.modules": rsl_rl_modules}):
+            result = _load_rsl_rl(str(checkpoint_path), "cpu")
+
+        rsl_rl_modules.ActorCritic.assert_called_once_with(a=1)
+        policy.load_state_dict.assert_called_once()
+        assert result is policy
         policy.to.assert_called_once_with("cpu")
         assert result is policy
 

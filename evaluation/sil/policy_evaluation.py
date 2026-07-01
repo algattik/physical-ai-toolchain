@@ -27,6 +27,7 @@ import argparse
 import json
 import logging
 import os
+import pickle
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -191,8 +192,19 @@ def _load_rsl_rl(checkpoint_path: str, device: str) -> Any:
     MLflow, or the AzureML registry cannot execute arbitrary code via pickle.
     The RSL-RL checkpoint holds only tensors (``model_state_dict``) and a
     primitive ``model_cfg`` mapping, both of which the safe unpickler allows.
+
+    Raises:
+        ValueError: If the safe unpickler rejects the checkpoint.
     """
-    checkpoint = torch.load(checkpoint_path, map_location=device, weights_only=True)
+    try:
+        checkpoint = torch.load(checkpoint_path, map_location=device, weights_only=True)
+    except pickle.UnpicklingError as error:
+        raise ValueError(
+            f"Checkpoint {checkpoint_path} could not be loaded under weights_only=True (safe unpickler). "
+            "If it is a trusted framework checkpoint storing non-tensor objects outside model_state_dict, "
+            "allowlist those types with torch.serialization.add_safe_globals([...]); do not set "
+            f"weights_only=False. Underlying error: {error}"
+        ) from error
     from rsl_rl.modules import ActorCritic
 
     policy = ActorCritic(**checkpoint.get("model_cfg", {}))

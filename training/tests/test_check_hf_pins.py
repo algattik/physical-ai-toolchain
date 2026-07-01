@@ -234,6 +234,18 @@ class TestYamlInlineC:
 
         assert _MOD.main(["check_hf_pins.py", str(tmp_path / "training")]) == 1
 
+    def test_flags_version_suffixed_interpreter_inline_c(self, tmp_path: Path) -> None:
+        # ``python3.12 -c`` must be scanned like ``python``/``python3``.
+        workflow = tmp_path / "training" / "workflows" / "osmo"
+        workflow.mkdir(parents=True)
+        (workflow / "train.yaml").write_text(
+            'command: |\n            python3.12 -c "from huggingface_hub import snapshot_download; '
+            "snapshot_download(repo_id='x')\"\n",
+            encoding="utf-8",
+        )
+
+        assert _MOD.main(["check_hf_pins.py", str(tmp_path / "training")]) == 1
+
     def test_accepts_pinned_inline_c(self, tmp_path: Path) -> None:
         workflow = tmp_path / "training" / "workflows" / "osmo"
         workflow.mkdir(parents=True)

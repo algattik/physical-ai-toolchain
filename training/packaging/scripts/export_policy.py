@@ -12,6 +12,7 @@ import argparse
 import copy
 import hashlib
 import os
+import pickle
 import sys
 from dataclasses import dataclass
 from pathlib import Path
@@ -104,6 +105,29 @@ def build_mlp(
     return nn.Sequential(*layers)
 
 
+def _load_checkpoint(checkpoint_path: str, map_location: str = "cpu") -> dict:
+    """Load a checkpoint under ``weights_only=True``, failing with actionable guidance.
+
+    ``weights_only=True`` runs the restricted unpickler over the whole checkpoint, so a
+    trusted framework checkpoint that stores non-tensor objects (e.g. a numpy scalar in
+    ``infos``) alongside ``model_state_dict`` is rejected even though only tensors are read.
+    Surface that as a clear error steering the operator to allowlist the offending type
+    rather than disabling the safeguard, which would reopen the pickle-RCE vector.
+
+    Raises:
+        ValueError: If the safe unpickler rejects the checkpoint.
+    """
+    try:
+        return torch.load(checkpoint_path, map_location=map_location, weights_only=True)
+    except pickle.UnpicklingError as error:
+        raise ValueError(
+            f"Checkpoint {checkpoint_path} could not be loaded under weights_only=True (safe unpickler). "
+            "If it is a trusted framework checkpoint storing non-tensor objects outside model_state_dict, "
+            "allowlist those types with torch.serialization.add_safe_globals([...]); do not set "
+            f"weights_only=False. Underlying error: {error}"
+        ) from error
+
+
 def infer_architecture_from_checkpoint(checkpoint_path: str) -> PolicyArchitecture:
     """Infer policy architecture from RSL-RL checkpoint weights.
 
@@ -119,7 +143,7 @@ def infer_architecture_from_checkpoint(checkpoint_path: str) -> PolicyArchitectu
     Raises:
         ValueError: If checkpoint structure is invalid or actor weights not found.
     """
-    checkpoint = torch.load(checkpoint_path, map_location="cpu", weights_only=True)
+    checkpoint = _load_checkpoint(checkpoint_path)
 
     if "model_state_dict" not in checkpoint:
         raise ValueError("Checkpoint missing 'model_state_dict' key")
@@ -190,7 +214,7 @@ def load_actor_from_checkpoint(
 
     print(f"Policy architecture: {arch}")
 
-    checkpoint = torch.load(checkpoint_path, map_location="cpu", weights_only=True)
+    checkpoint = _load_checkpoint(checkpoint_path)
     state_dict = checkpoint["model_state_dict"]
 
     # Build actor network

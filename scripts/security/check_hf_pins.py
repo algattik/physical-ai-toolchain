@@ -51,6 +51,9 @@ _EXCLUDED_PARTS = frozenset({"tests", "external", "node_modules", ".venv", ".git
 # Python when the opener either invokes ``python`` or redirects the body into a ``.py`` file.
 _HEREDOC_OPENER_RE = re.compile(r"<<-?\s*['\"]?(\w+)['\"]?(?:\s|$)")
 _PYTHON_TOKEN_RE = re.compile(r"\bpython3?\b")
+# ``python -c`` interpreter basename, allowing version suffixes (``python3.12``), matched
+# in full so the inline-``-c`` scanner sees the same interpreters as the heredoc opener.
+_PYTHON_INTERPRETER_RE = re.compile(r"python(?:\d+(?:\.\d+)?)?")
 # Redirect of the heredoc body into a ``.py`` file (``> dl.py`` / ``>> dl.py``): an
 # unambiguous signal the body is Python that a later ``python <file>`` line will execute,
 # so ``cat > dl.py <<'DELIM'`` is not a way to smuggle an unpinned download past the guard.
@@ -233,7 +236,7 @@ def _python_inline_c(text: str) -> Iterator[tuple[int, str]]:
             continue
 
         for index, token in enumerate(argv):
-            if Path(token).name not in {"python", "python3"}:
+            if not _PYTHON_INTERPRETER_RE.fullmatch(Path(token).name):
                 continue
             try:
                 command_index = argv.index("-c", index + 1)

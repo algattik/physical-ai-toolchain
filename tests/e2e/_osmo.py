@@ -754,8 +754,10 @@ def _vla_base_model_args() -> list[str]:
                 f"{_VLA_BASE_MODEL_REVISION_ENV} is required when {_VLA_BASE_MODEL_ENV} points at a remote "
                 "HuggingFace model"
             )
-    if base_model_revision is not None:
-        args.extend(["--base-model-revision", base_model_revision])
+        if base_model_revision is not None:
+            args.extend(["--base-model-revision", base_model_revision])
+    elif base_model_revision is not None:
+        pytest.skip(f"{_VLA_BASE_MODEL_REVISION_ENV} is set without {_VLA_BASE_MODEL_ENV}; nothing to pin")
     return args
 
 
