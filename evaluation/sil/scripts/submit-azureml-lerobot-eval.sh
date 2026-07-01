@@ -119,7 +119,6 @@ ensure_ml_extension() {
     fatal "Azure ML CLI extension not installed. Run: az extension add --name ml"
 }
 
-
 #------------------------------------------------------------------------------
 # Defaults
 #------------------------------------------------------------------------------

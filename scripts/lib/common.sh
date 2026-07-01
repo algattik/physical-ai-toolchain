@@ -301,14 +301,9 @@ register_azureml_environment() {
   local name="${1:?environment name required}" version="${2:?environment version required}"
   local image="${3:?image required}" rg="${4:?resource group required}"
   local ws="${5:?workspace name required}" sub="${6:?subscription id required}"
-  local env_file
-
-  if az ml environment show --name "$name" --version "$version" \
-    --resource-group "$rg" --workspace-name "$ws" \
-    --subscription "$sub" >/dev/null 2>&1; then
-    info "AzureML environment ${name}:${version} already exists"
-    return
-  fi
+  local env_file existing_image
+  local create_args=(ml environment create)
+  local show_args=(ml environment show)
 
   env_file=$(mktemp)
 
@@ -319,16 +314,21 @@ version: $version
 image: $image
 EOF
 
+  create_args+=(--file "$env_file" --name "$name" --version "$version" --resource-group "$rg" --workspace-name "$ws" --subscription "$sub")
+  show_args+=(--name "$name" --version "$version" --resource-group "$rg" --workspace-name "$ws" --subscription "$sub")
+
   info "Publishing AzureML environment ${name}:${version}"
-  az ml environment create --file "$env_file" \
-    --name "$name" --version "$version" \
-    --resource-group "$rg" --workspace-name "$ws" \
-    --subscription "$sub" >/dev/null ||
-    {
-      rm -f "$env_file"
-      fatal "Failed to publish AzureML environment ${name}:${version}"
-    }
+  if az "${create_args[@]}" >/dev/null 2>&1; then
+    rm -f "$env_file"
+    return
+  fi
+
   rm -f "$env_file"
+  existing_image=$(az "${show_args[@]}" --query image -o tsv 2>/dev/null || true)
+
+  [[ -n "$existing_image" ]] || fatal "Environment ${name}:${version} registration failed, and no existing environment image could be verified"
+  [[ "$existing_image" == "$image" ]] || fatal "Environment ${name}:${version} already uses image '$existing_image', expected '$image'"
+  info "Environment ${name}:${version} already exists with matching image; continuing"
 }
 
 # Login to Azure Container Registry
