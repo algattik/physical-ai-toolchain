@@ -34,6 +34,7 @@ import pyarrow as pa
 import pyarrow.parquet as pq
 import pytest
 
+from tests.e2e._aml import AzureMLWorkspace
 from tests.e2e._common import e2e_name, env_value, format_command_failure, log_e2e, run_command
 
 # --- Embodiment spec (single source of truth) -------------------------------
@@ -473,3 +474,85 @@ def stage_synthetic_lerobot_dataset(
     request.addfinalizer(lambda: _delete_dataset(repo_root, storage_account, container, prefix))
 
     return StagedDataset(storage_account=storage_account, container=container, prefix=prefix)
+
+
+# --- AzureML data asset staging ---------------------------------------------
+# The AzureML LeRobot pipeline (submit-azureml-lerobot-pipeline.sh) consumes a
+# registered uri_folder data asset (azureml:NAME:VERSION), not a blob URL. The
+# pipeline's preprocess step accepts a raw LeRobot dataset (meta/, data/, videos/),
+# which is exactly what the synthetic generator produces.
+
+
+def _archive_data_asset(repo_root: Path, aml_workspace: AzureMLWorkspace, name: str, version: str) -> None:
+    log_e2e(f"Archiving AzureML data asset {name}:{version}")
+    run_command(
+        [
+            "az",
+            "ml",
+            "data",
+            "archive",
+            "--name",
+            name,
+            "--version",
+            version,
+            "--subscription",
+            aml_workspace.subscription_id,
+            "--resource-group",
+            aml_workspace.resource_group,
+            "--workspace-name",
+            aml_workspace.workspace_name,
+        ],
+        cwd=repo_root,
+    )
+
+
+def register_synthetic_lerobot_data_asset(
+    request: pytest.FixtureRequest, repo_root: Path, aml_workspace: AzureMLWorkspace
+) -> str:
+    """Register the synthetic LeRobot dataset as an AzureML uri_folder data asset.
+
+    Returns the ``azureml:NAME:VERSION`` reference for the pipeline's ``--dataset-asset``
+    input and registers teardown that archives the asset. Version is a canonical integer
+    (``"1"``) with no leading zeros, as the pipeline submission validation requires.
+    """
+    work_dir = Path(tempfile.mkdtemp(prefix="il-e2e-pipeline-dataset-"))
+    request.addfinalizer(lambda: shutil.rmtree(work_dir, ignore_errors=True))
+
+    dataset_dir = work_dir / "dataset"
+    log_e2e("Generating synthetic LeRobot v3.0 dataset for AzureML data asset")
+    build_synthetic_dataset(dataset_dir)
+    validate_synthetic_dataset(dataset_dir)
+
+    name = e2e_name("e2e-lerobot-pipeline")
+    version = "1"
+    log_e2e(f"Registering AzureML data asset {name}:{version} from {dataset_dir}")
+    result = run_command(
+        [
+            "az",
+            "ml",
+            "data",
+            "create",
+            "--name",
+            name,
+            "--version",
+            version,
+            "--type",
+            "uri_folder",
+            "--path",
+            str(dataset_dir),
+            "--subscription",
+            aml_workspace.subscription_id,
+            "--resource-group",
+            aml_workspace.resource_group,
+            "--workspace-name",
+            aml_workspace.workspace_name,
+        ],
+        cwd=repo_root,
+    )
+    if result.returncode != 0:
+        raise AssertionError(
+            f"Failed to register AzureML data asset {name}:{version}\n\n{format_command_failure(result)}"
+        )
+    request.addfinalizer(lambda: _archive_data_asset(repo_root, aml_workspace, name, version))
+
+    return f"azureml:{name}:{version}"

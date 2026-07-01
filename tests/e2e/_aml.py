@@ -1,14 +1,18 @@
 from __future__ import annotations
 
 import re
+import subprocess
 from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
 
+import pytest
+
 from tests.e2e._common import (
     e2e_name,
+    env_value,
     format_command_failure,
     log_e2e,
     parse_json_from_output,
@@ -39,6 +43,7 @@ class AzureMLJob:
 def _parse_azureml_job_name(output: str) -> str | None:
     patterns = (
         r"Job submitted:\s*(?P<name>[^\s]+)",
+        r"Pipeline submitted:\s*(?P<name>[^\s]+)",
         r"Job Name:\s*(?P<name>[^\s]+)",
     )
     for pattern in patterns:
@@ -85,18 +90,7 @@ def submit_aml_training(
     if result.returncode != 0:
         raise AssertionError(f"AzureML e2e submission failed\n\n{format_command_failure(result)}")
 
-    combined_output = "\n".join(part for part in (result.stdout, result.stderr) if part)
-    job_name = _parse_azureml_job_name(combined_output)
-    if job_name is None:
-        raise AssertionError(f"Unable to parse AzureML job name from submission output\n\n{combined_output.strip()}")
-
-    log_e2e(f"Submitted AzureML job name={job_name}")
-
-    return AzureMLJob(
-        name=job_name,
-        workspace=aml_workspace,
-        experiment_name=experiment_name,
-    )
+    return _aml_job_from_submission(result, aml_workspace, experiment_name, "AzureML training")
 
 
 def submit_aml_lerobot_training(
@@ -149,20 +143,234 @@ def submit_aml_lerobot_training(
     if result.returncode != 0:
         raise AssertionError(f"AzureML LeRobot e2e submission failed\n\n{format_command_failure(result)}")
 
+    return _aml_job_from_submission(result, aml_workspace, experiment_name, "AzureML LeRobot training")
+
+
+_AML_LEROBOT_EVAL_POLICY_REPO_ENV = "E2E_AML_LEROBOT_EVAL_POLICY_REPO_ID"
+_AML_LEROBOT_EVAL_MODEL_ENV = "E2E_AML_LEROBOT_EVAL_MODEL"
+_AML_ISAAC_EVAL_MODEL_ENV = "E2E_AML_ISAAC_EVAL_MODEL"
+_OSMO_LEROBOT_EVAL_JOB_FILE = "evaluation/sil/workflows/azureml/lerobot-eval.yaml"
+
+
+def _aml_lerobot_eval_policy_source_args() -> tuple[list[str], str]:
+    """Resolve the eval policy source for the AzureML LeRobot eval submission.
+
+    Unlike the OSMO LeRobot eval script, ``submit-azureml-lerobot-eval.sh`` has no
+    ``--builtin-policy`` option, so a real policy must be supplied. Configure one of:
+
+    - ``E2E_AML_LEROBOT_EVAL_POLICY_REPO_ID`` — a HuggingFace policy repo id.
+    - ``E2E_AML_LEROBOT_EVAL_MODEL`` — an AzureML model ``name:version``.
+
+    The test skips when neither is set (there is nothing to evaluate).
+    """
+    policy_repo_id = env_value(_AML_LEROBOT_EVAL_POLICY_REPO_ENV)
+    if policy_repo_id:
+        return ["--policy-repo-id", policy_repo_id], f"HuggingFace policy repo {policy_repo_id}"
+
+    model = env_value(_AML_LEROBOT_EVAL_MODEL_ENV)
+    if not model:
+        pytest.skip(
+            "No eval policy source configured; set "
+            f"{_AML_LEROBOT_EVAL_POLICY_REPO_ENV} (HuggingFace repo) or "
+            f"{_AML_LEROBOT_EVAL_MODEL_ENV} (AzureML model name:version)"
+        )
+    if ":" not in model:
+        pytest.skip(f"{_AML_LEROBOT_EVAL_MODEL_ENV} must use AzureML model name:version syntax")
+
+    model_name, model_version = (part.strip() for part in model.split(":", 1))
+    if not model_name or not model_version:
+        pytest.skip(f"{_AML_LEROBOT_EVAL_MODEL_ENV} must include a non-empty AzureML model name and version")
+
+    return [
+        "--from-aml-model",
+        "--model-name",
+        model_name,
+        "--model-version",
+        model_version,
+    ], f"AzureML model {model_name}:{model_version}"
+
+
+def submit_aml_lerobot_eval(
+    repo_root: Path,
+    aml_workspace: AzureMLWorkspace,
+    *,
+    policy_type: str,
+    eval_episodes: int,
+    eval_batch_size: int,
+    blob_storage_account: str,
+    blob_container: str,
+    blob_prefix: str,
+) -> AzureMLJob:
+    policy_args, policy_description = _aml_lerobot_eval_policy_source_args()
+    experiment_name = e2e_name("il-eval-e2e-aml")
+    log_e2e(
+        "Submitting AzureML LeRobot eval job "
+        f"for policy={policy_description}, policy_type={policy_type}, eval_episodes={eval_episodes}, "
+        f"dataset={blob_storage_account}/{blob_container}/{blob_prefix}, experiment={experiment_name}"
+    )
+    result = run_command(
+        [
+            str(repo_root / "evaluation/sil/scripts/submit-azureml-lerobot-eval.sh"),
+            # The script's default --job-file points at a non-existent path; pass the eval job explicitly.
+            "--job-file",
+            str(repo_root / _OSMO_LEROBOT_EVAL_JOB_FILE),
+            *policy_args,
+            "--policy-type",
+            policy_type,
+            "--from-blob",
+            "--storage-account",
+            blob_storage_account,
+            "--storage-container",
+            blob_container,
+            "--blob-prefix",
+            blob_prefix,
+            "--eval-episodes",
+            str(eval_episodes),
+            "--eval-batch-size",
+            str(eval_batch_size),
+            "--mlflow-enable",
+            "--experiment-name",
+            experiment_name,
+            "--subscription-id",
+            aml_workspace.subscription_id,
+            "--resource-group",
+            aml_workspace.resource_group,
+            "--workspace-name",
+            aml_workspace.workspace_name,
+        ],
+        cwd=repo_root,
+    )
+    if result.returncode != 0:
+        raise AssertionError(f"AzureML LeRobot eval e2e submission failed\n\n{format_command_failure(result)}")
+
+    return _aml_job_from_submission(result, aml_workspace, experiment_name, "AzureML LeRobot eval")
+
+
+def submit_aml_isaaclab_eval(
+    repo_root: Path,
+    aml_workspace: AzureMLWorkspace,
+    *,
+    eval_episodes: int,
+    num_envs: int,
+) -> AzureMLJob:
+    """Submit the AzureML Isaac Lab evaluation.
+
+    Requires a registered policy: set ``E2E_AML_ISAAC_EVAL_MODEL`` to an AzureML model
+    ``name:version`` (or ``name:latest``) produced by a prior training run. The test
+    skips when unset because there is nothing to evaluate.
+    """
+    model = env_value(_AML_ISAAC_EVAL_MODEL_ENV)
+    if not model:
+        pytest.skip(
+            f"No eval model configured; set {_AML_ISAAC_EVAL_MODEL_ENV} to an AzureML model name:version"
+        )
+    if ":" not in model:
+        pytest.skip(f"{_AML_ISAAC_EVAL_MODEL_ENV} must use AzureML model name:version syntax")
+    model_name, model_version = (part.strip() for part in model.split(":", 1))
+    if not model_name or not model_version:
+        pytest.skip(f"{_AML_ISAAC_EVAL_MODEL_ENV} must include a non-empty AzureML model name and version")
+
+    experiment_name = e2e_name("rl-eval-e2e-aml")
+    log_e2e(
+        "Submitting AzureML Isaac Lab eval job "
+        f"for model={model_name}:{model_version}, eval_episodes={eval_episodes}, num_envs={num_envs}, "
+        f"experiment={experiment_name}"
+    )
+    result = run_command(
+        [
+            str(repo_root / "evaluation/sil/scripts/submit-azureml-isaaclab-evaluation.sh"),
+            "--model-name",
+            model_name,
+            "--model-version",
+            model_version,
+            "--eval-episodes",
+            str(eval_episodes),
+            "--num-envs",
+            str(num_envs),
+            "--experiment-name",
+            experiment_name,
+            "--subscription-id",
+            aml_workspace.subscription_id,
+            "--resource-group",
+            aml_workspace.resource_group,
+            "--workspace-name",
+            aml_workspace.workspace_name,
+        ],
+        cwd=repo_root,
+    )
+    if result.returncode != 0:
+        raise AssertionError(f"AzureML Isaac Lab eval e2e submission failed\n\n{format_command_failure(result)}")
+
+    return _aml_job_from_submission(result, aml_workspace, experiment_name, "AzureML Isaac Lab eval")
+
+
+def submit_aml_lerobot_pipeline(
+    repo_root: Path,
+    aml_workspace: AzureMLWorkspace,
+    *,
+    dataset_asset: str,
+    dataset_repo_id: str,
+    policy_type: str,
+    training_steps: int,
+    save_freq: int,
+    batch_size: int,
+    eval_episodes: int,
+) -> AzureMLJob:
+    experiment_name = e2e_name("il-pipeline-e2e-aml")
+    log_e2e(
+        "Submitting AzureML LeRobot pipeline job "
+        f"for dataset_asset={dataset_asset}, dataset_repo_id={dataset_repo_id}, policy={policy_type}, "
+        f"training_steps={training_steps}, save_freq={save_freq}, batch_size={batch_size}, "
+        f"eval_episodes={eval_episodes}, experiment={experiment_name}"
+    )
+    result = run_command(
+        [
+            str(repo_root / "training/il/scripts/submit-azureml-lerobot-pipeline.sh"),
+            "--dataset-asset",
+            dataset_asset,
+            "--dataset-repo-id",
+            dataset_repo_id,
+            "--policy-type",
+            policy_type,
+            "--training-steps",
+            str(training_steps),
+            "--save-freq",
+            str(save_freq),
+            "--batch-size",
+            str(batch_size),
+            "--eval-episodes",
+            str(eval_episodes),
+            "--experiment-name",
+            experiment_name,
+            "--subscription-id",
+            aml_workspace.subscription_id,
+            "--resource-group",
+            aml_workspace.resource_group,
+            "--workspace-name",
+            aml_workspace.workspace_name,
+        ],
+        cwd=repo_root,
+    )
+    if result.returncode != 0:
+        raise AssertionError(f"AzureML LeRobot pipeline e2e submission failed\n\n{format_command_failure(result)}")
+
+    return _aml_job_from_submission(result, aml_workspace, experiment_name, "AzureML LeRobot pipeline")
+
+
+def _aml_job_from_submission(
+    result: subprocess.CompletedProcess[str],
+    aml_workspace: AzureMLWorkspace,
+    experiment_name: str,
+    description: str,
+) -> AzureMLJob:
     combined_output = "\n".join(part for part in (result.stdout, result.stderr) if part)
     job_name = _parse_azureml_job_name(combined_output)
     if job_name is None:
         raise AssertionError(
-            f"Unable to parse AzureML job name from LeRobot submission output\n\n{combined_output.strip()}"
+            f"Unable to parse {description} job name from submission output\n\n{combined_output.strip()}"
         )
-
-    log_e2e(f"Submitted AzureML LeRobot job name={job_name}")
-
-    return AzureMLJob(
-        name=job_name,
-        workspace=aml_workspace,
-        experiment_name=experiment_name,
-    )
+    log_e2e(f"Submitted {description} job name={job_name}")
+    return AzureMLJob(name=job_name, workspace=aml_workspace, experiment_name=experiment_name)
 
 
 def fetch_aml_job_payload(job: AzureMLJob, repo_root: Path) -> dict[str, Any]:

@@ -131,6 +131,53 @@ def submit_osmo_training(
     )
 
 
+def submit_osmo_dataset_training(
+    repo_root: Path,
+    *,
+    task: str,
+    max_iterations: int,
+    num_envs: int,
+) -> OSMOWorkflow:
+    """Submit OSMO RL training via the dataset-folder-injection delivery path.
+
+    Distinct from ``submit_osmo_training`` (base64 archive): this uploads the training
+    code as a versioned OSMO dataset via ``localpath``. The training itself is identical,
+    so MLflow behaviour is already covered by the archive test; here the delivery mechanism
+    is what is exercised. The script exposes no ``--correlation-id`` flag, so the caller
+    verifies success via the workflow task status rather than an MLflow correlation lookup.
+    """
+    experiment_name = f"isaaclab-{task}" if task else "isaaclab-training"
+    log_e2e(
+        "Submitting OSMO dataset-injection workflow "
+        f"for task={task}, num_envs={num_envs}, max_iterations={max_iterations}, experiment={experiment_name}"
+    )
+    result = run_command(
+        [
+            str(repo_root / "training/rl/scripts/submit-osmo-dataset-training.sh"),
+            "--task",
+            task,
+            "--max-iterations",
+            str(max_iterations),
+            "--num-envs",
+            str(num_envs),
+            # Smoke-sized to fit a single Standard_NC24ads_A100_v4 GPU node (24 vCPU / 220 GiB).
+            "--cpu",
+            "20",
+            "--memory",
+            "180Gi",
+            "--skip-register-checkpoint",
+            "--",
+            "--format-type",
+            "json",
+        ],
+        cwd=repo_root,
+    )
+    if result.returncode != 0:
+        raise AssertionError(f"OSMO dataset-injection e2e submission failed\n\n{format_command_failure(result)}")
+
+    return _osmo_workflow_from_submission(result, experiment_name, "OSMO dataset-injection training")
+
+
 def _fetch_osmo_workflow_payload(workflow: OSMOWorkflow, repo_root: Path) -> dict[str, Any]:
     result = run_command(
         ["osmo", "workflow", "query", workflow.workflow_id, "--format-type", "json"],
@@ -631,6 +678,64 @@ def submit_osmo_lerobot_eval(
         raise AssertionError(f"OSMO LeRobot eval e2e submission failed\n\n{format_command_failure(result)}")
 
     return _osmo_workflow_from_submission(result, experiment_name, "OSMO LeRobot eval", correlation_id=experiment_name)
+
+
+_OSMO_ISAAC_EVAL_CHECKPOINT_URI_ENV = "E2E_OSMO_RL_EVAL_CHECKPOINT_URI"
+
+
+def submit_osmo_isaaclab_eval(
+    repo_root: Path,
+    aml_workspace: AzureMLWorkspace,
+    *,
+    task: str,
+    num_envs: int,
+    max_steps: int,
+) -> OSMOWorkflow:
+    """Submit the OSMO Isaac Lab evaluation/inference workflow.
+
+    Requires a trained checkpoint: set ``E2E_OSMO_RL_EVAL_CHECKPOINT_URI`` to an MLflow
+    (``runs:/<id>/path`` or ``models:/<name>/<version>``), Azure Blob, or HTTP(S)
+    checkpoint URI produced by a prior training run. The test skips when unset because
+    there is nothing to evaluate.
+    """
+    checkpoint_uri = env_value(_OSMO_ISAAC_EVAL_CHECKPOINT_URI_ENV)
+    if not checkpoint_uri:
+        pytest.skip(
+            f"No eval checkpoint configured; set {_OSMO_ISAAC_EVAL_CHECKPOINT_URI_ENV} to a checkpoint URI"
+        )
+
+    experiment_name = f"isaaclab-inference-{task}" if task else "isaaclab-inference"
+    log_e2e(
+        "Submitting OSMO Isaac Lab eval workflow "
+        f"for task={task}, num_envs={num_envs}, max_steps={max_steps}, checkpoint_uri={checkpoint_uri}"
+    )
+    result = run_command(
+        [
+            str(repo_root / "evaluation/sil/scripts/submit-osmo-eval.sh"),
+            "--checkpoint-uri",
+            checkpoint_uri,
+            "--task",
+            task,
+            "--num-envs",
+            str(num_envs),
+            "--max-steps",
+            str(max_steps),
+            "--azure-subscription-id",
+            aml_workspace.subscription_id,
+            "--azure-resource-group",
+            aml_workspace.resource_group,
+            "--azure-workspace-name",
+            aml_workspace.workspace_name,
+            "--",
+            "--format-type",
+            "json",
+        ],
+        cwd=repo_root,
+    )
+    if result.returncode != 0:
+        raise AssertionError(f"OSMO Isaac Lab eval e2e submission failed\n\n{format_command_failure(result)}")
+
+    return _osmo_workflow_from_submission(result, experiment_name, "OSMO Isaac Lab eval")
 
 
 _VLA_DATASET_BLOB_URL_ENV = "E2E_VLA_DATASET_BLOB_URL"
