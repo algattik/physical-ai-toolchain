@@ -25,6 +25,12 @@ jobs:
         with:
           github-token: "${{ secrets.GITHUB_TOKEN }}"
 
+      - name: Checkout trusted base scripts
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+          ref: ${{ github.event.pull_request.base.sha }}
+
       - name: Enable auto-merge for eligible patch bumps
         # All values below are dependabot/fetch-metadata outputs, not dependabot.yml strings:
         #  - update-type 'version-update:semver-patch' = patch bumps only
@@ -43,12 +49,4 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PR_URL: ${{ github.event.pull_request.html_url }}
-        run: |
-          if out=$(gh pr merge --auto --squash "${PR_URL}" 2>&1); then
-            echo "Auto-merge armed: ${PR_URL}"
-          elif grep -qi "auto.merge is not allowed" <<<"${out}"; then
-            echo "::notice::'Allow auto-merge' is off; no-op until an admin enables it."
-          else
-            echo "${out}" >&2
-            exit 1
-          fi
+        run: scripts/dependabot-auto-merge.sh --pr-url "$PR_URL"
