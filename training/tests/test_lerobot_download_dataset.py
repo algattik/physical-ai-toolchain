@@ -1008,3 +1008,18 @@ class TestChecksumManifest:
 
         with pytest.raises(RuntimeError, match=r"unlisted: data/smuggled\.json"):
             _MOD.verify_checksums(tmp_path)
+
+    def test_manifest_and_verify_ignore_transient_files(self, tmp_path):
+        # ``.lock``/``.cache``/``.metadata`` are skipped by the downloader, so the
+        # manifest must not cover them and verification must not flag them.
+        _seed_dataset(tmp_path)
+        (tmp_path / "data" / "shard.lock").write_bytes(b"lock")
+        (tmp_path / ".cache").mkdir()
+        (tmp_path / ".cache" / "blob.tmp").write_bytes(b"cache")
+        (tmp_path / "meta" / "info.metadata").write_bytes(b"meta")
+
+        manifest = _MOD.write_checksum_manifest(tmp_path)
+        parsed = dict(reversed(line.split("  ", 1)) for line in manifest.read_text(encoding="utf-8").splitlines())
+        assert set(parsed) == {"data/episode.parquet", "meta/info.json"}
+
+        _MOD.verify_checksums(tmp_path)

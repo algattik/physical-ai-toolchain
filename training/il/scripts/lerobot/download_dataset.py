@@ -24,6 +24,16 @@ EXIT_SUCCESS = 0
 EXIT_FAILURE = 1
 
 
+def _is_excluded_dataset_file(rel: str) -> bool:
+    """True for transient files the downloader skips and the manifest must not cover.
+
+    Kept in lockstep between :func:`write_checksum_manifest` and
+    :func:`download_dataset` so the manifest's file set matches what lands on disk;
+    otherwise verification fails closed with spurious ``missing:`` entries.
+    """
+    return ".cache/" in rel or rel.endswith(".lock") or rel.endswith(".metadata")
+
+
 def _sha256_file(path: Path) -> str:
     """Return the hex SHA256 of a file, streamed in chunks."""
     digest = hashlib.sha256()
@@ -53,7 +63,7 @@ def write_checksum_manifest(dataset_dir: Path) -> Path:
         if not path.is_file():
             continue
         rel = path.relative_to(dataset_dir).as_posix()
-        if rel == _CHECKSUM_MANIFEST:
+        if rel == _CHECKSUM_MANIFEST or _is_excluded_dataset_file(rel):
             continue
         entries.append(f"{_sha256_file(path)}  {rel}\n")
 
@@ -110,7 +120,13 @@ def verify_checksums(dataset_dir: Path) -> None:
             continue
         verified += 1
 
-    on_disk = {path.relative_to(dataset_dir).as_posix() for path in dataset_dir.rglob("*") if path.is_file()}
+    on_disk = {
+        rel
+        for path in dataset_dir.rglob("*")
+        if path.is_file()
+        for rel in (path.relative_to(dataset_dir).as_posix(),)
+        if not _is_excluded_dataset_file(rel)
+    }
     on_disk.discard(_CHECKSUM_MANIFEST)
     for rel in sorted(on_disk - listed):
         mismatches.append(f"unlisted: {rel}")
@@ -192,7 +208,7 @@ def download_dataset(
     dest_dir_resolved = dest_dir.resolve()
     for blob in container_client.list_blobs(name_starts_with=prefix):
         rel = blob.name[len(prefix) :]
-        if ".cache/" in rel or rel.endswith(".lock") or rel.endswith(".metadata"):
+        if _is_excluded_dataset_file(rel):
             continue
 
         # Reject absolute paths and traversal segments to prevent writes outside dest_dir.

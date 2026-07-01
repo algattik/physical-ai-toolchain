@@ -39,8 +39,10 @@ _DEFAULT_ROOTS = (
 
 _EXCLUDED_PARTS = frozenset({"tests", "external", "node_modules", ".venv", ".git"})
 
-# ``python3 << 'DELIM'`` / ``python <<-"DELIM"`` heredoc opener in workflow YAML.
-_HEREDOC_RE = re.compile(r"\bpython3?\s+<<-?\s*['\"]?(\w+)['\"]?\s*$")
+# ``python3 << 'DELIM'``, ``python3 - <<'DELIM'``, ``python -u <<-"DELIM"`` heredoc
+# opener in workflow YAML. The optional ``[^<\n]*`` allows the stdin ``-`` marker and
+# any interpreter flags that commonly precede the redirection.
+_HEREDOC_RE = re.compile(r"\bpython3?\s+(?:[^<\n]*\s)?<<-?\s*['\"]?(\w+)['\"]?\s*$")
 
 
 class ScanError(RuntimeError):

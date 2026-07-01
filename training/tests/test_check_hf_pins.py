@@ -117,3 +117,27 @@ class TestYamlHeredocs:
         )
 
         assert _MOD.main(["check_hf_pins.py", str(root)]) == 0
+
+    def test_flags_dash_stdin_heredoc(self, tmp_path: Path) -> None:
+        # ``python3 - <<'SCRIPT'`` is the explicit-stdin form; the guard must see it.
+        workflow = tmp_path / "training" / "workflows" / "osmo"
+        workflow.mkdir(parents=True)
+        (workflow / "train.yaml").write_text(
+            "command: |\n            python3 - <<'SCRIPT'\n"
+            "            snapshot_download(repo_id='x')\n            SCRIPT\n",
+            encoding="utf-8",
+        )
+
+        assert _MOD.main(["check_hf_pins.py", str(tmp_path / "training")]) == 1
+
+    def test_flags_flagged_stdin_heredoc(self, tmp_path: Path) -> None:
+        # Any interpreter flag (e.g. ``-u``) between python and ``<<`` must not hide the body.
+        workflow = tmp_path / "training" / "workflows" / "osmo"
+        workflow.mkdir(parents=True)
+        (workflow / "train.yaml").write_text(
+            "command: |\n            python -u <<SCRIPT\n"
+            "            snapshot_download(repo_id='x')\n            SCRIPT\n",
+            encoding="utf-8",
+        )
+
+        assert _MOD.main(["check_hf_pins.py", str(tmp_path / "training")]) == 1
