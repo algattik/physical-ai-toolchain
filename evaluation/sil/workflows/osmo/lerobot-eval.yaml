@@ -908,8 +908,10 @@ workflow:
 default-values:
   image: pytorch/pytorch:2.4.1-cuda12.4-cudnn9-runtime
   policy_repo_id: ""
+  policy_revision: ""
   policy_type: act
   dataset_repo_id: ""
+  dataset_revision: ""
   eval_episodes: "10"
   eval_batch_size: "10"
   output_dir: /workspace/outputs/eval

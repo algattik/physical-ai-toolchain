@@ -218,7 +218,10 @@ def _verify_jit_integrity(jit_path: str) -> None:
         raise FileNotFoundError(
             f"Missing integrity manifest {manifest}; TorchScript models must ship a SHA256 sidecar from export"
         )
-    expected = manifest.read_text(encoding="utf-8").split()[0].strip().lower()
+    tokens = manifest.read_text(encoding="utf-8").split()
+    if not tokens:
+        raise ValueError(f"Empty integrity manifest {manifest}; expected a SHA256 digest")
+    expected = tokens[0].strip().lower()
 
     digest = hashlib.sha256()
     with open(jit_path, "rb") as f:

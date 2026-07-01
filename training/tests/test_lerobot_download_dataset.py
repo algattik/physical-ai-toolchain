@@ -993,3 +993,18 @@ class TestChecksumManifest:
         _MOD.verify_checksums(tmp_path)
 
         assert "checksums.sha256 not found" in capsys.readouterr().out
+
+    def test_verify_raises_when_manifest_absent_and_required(self, tmp_path, monkeypatch):
+        _seed_dataset(tmp_path)
+        monkeypatch.setenv("REQUIRE_CHECKSUMS", "1")
+
+        with pytest.raises(RuntimeError, match=r"REQUIRE_CHECKSUMS is set"):
+            _MOD.verify_checksums(tmp_path)
+
+    def test_verify_rejects_unlisted_file(self, tmp_path):
+        _seed_dataset(tmp_path)
+        _MOD.write_checksum_manifest(tmp_path)
+        (tmp_path / "data" / "smuggled.json").write_bytes(b"auto-loaded")
+
+        with pytest.raises(RuntimeError, match=r"unlisted: data/smuggled\.json"):
+            _MOD.verify_checksums(tmp_path)

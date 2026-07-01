@@ -29,6 +29,7 @@ import shutil
 import tempfile
 from dataclasses import dataclass
 from pathlib import Path
+from types import ModuleType
 
 import numpy as np
 import pyarrow as pa
@@ -40,7 +41,7 @@ from tests.e2e._common import e2e_name, env_value, format_command_failure, log_e
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 
 
-def _load_download_dataset_module():
+def _load_download_dataset_module() -> ModuleType:
     """Load the training-runtime download_dataset module (not an importable package).
 
     Reuses its ``write_checksum_manifest`` so the staged dataset carries the same

@@ -66,26 +66,40 @@ def verify_checksums(dataset_dir: Path) -> None:
 
     Azure transport ``validate_content`` is CRC32 only — it detects corruption,
     not malicious substitution. This verifies content SHA256 against the manifest
-    staged with the dataset at upload time. A missing manifest is a warning
-    (legacy datasets predate it); any mismatch or missing listed file raises.
+    staged with the dataset at upload time, and rejects any file present on disk
+    but absent from the manifest, so an attacker who can substitute blobs cannot
+    smuggle in an extra auto-loaded file that no entry covers.
+
+    A missing manifest is a warning by default (legacy datasets predate it). Set
+    ``REQUIRE_CHECKSUMS`` to a truthy value to turn the absent-manifest case into a
+    hard failure for integrity-gated environments.
 
     Raises:
-        RuntimeError: If a listed file is missing or its digest does not match.
+        RuntimeError: If a listed file is missing, its digest does not match, an
+            unlisted file is present, or the manifest is absent while
+            ``REQUIRE_CHECKSUMS`` is set.
     """
     dataset_dir = Path(dataset_dir)
     manifest_path = dataset_dir / _CHECKSUM_MANIFEST
     if not manifest_path.exists():
+        if os.environ.get("REQUIRE_CHECKSUMS", "").lower() in ("1", "true", "yes"):
+            raise RuntimeError(
+                f"{_CHECKSUM_MANIFEST} not found under {dataset_dir} and REQUIRE_CHECKSUMS is set; "
+                "refusing to use an unverified dataset"
+            )
         print(f"Warning: {_CHECKSUM_MANIFEST} not found; skipping content verification (legacy dataset)")
         return
 
     mismatches = []
     verified = 0
+    listed = set()
     for line in manifest_path.read_text(encoding="utf-8").splitlines():
         line = line.strip()
         if not line:
             continue
         expected, _, rel = line.partition("  ")
         rel = rel.strip()
+        listed.add(rel)
         target = dataset_dir / rel
         if not target.is_file():
             mismatches.append(f"missing: {rel}")
@@ -95,6 +109,11 @@ def verify_checksums(dataset_dir: Path) -> None:
             mismatches.append(f"mismatch: {rel} (expected {expected}, got {actual})")
             continue
         verified += 1
+
+    on_disk = {path.relative_to(dataset_dir).as_posix() for path in dataset_dir.rglob("*") if path.is_file()}
+    on_disk.discard(_CHECKSUM_MANIFEST)
+    for rel in sorted(on_disk - listed):
+        mismatches.append(f"unlisted: {rel}")
 
     if mismatches:
         raise RuntimeError(f"Dataset checksum verification failed for {dataset_dir}:\n  " + "\n  ".join(mismatches))
