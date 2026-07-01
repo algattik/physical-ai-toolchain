@@ -40,17 +40,17 @@ outputs:
     type: uri_folder
     description: Dataset layout ready for the train step (preprocessing.yaml + metadata.json + payload).
     mode: upload
-  preprocessing_config:
+  effective_preprocessing_config:
     type: uri_folder
     description: Effective preprocessing configuration emitted for downstream consumers.
     mode: upload
 
-environment: azureml:lerobot-training-env:latest
+environment: azureml:lerobot-training-env:1.0.0
 
 command: >-
   python preprocess.py
   --dataset_input ${{inputs.dataset}}
   --dataset_repo_id ${{inputs.dataset_repo_id}}
   --output_dataset ${{outputs.prepared_dataset}}
-  --output_config ${{outputs.preprocessing_config}}
+  --output_config ${{outputs.effective_preprocessing_config}}
   $[[--preprocessing_config ${{inputs.preprocessing_config}}]]

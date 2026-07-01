@@ -147,9 +147,11 @@ if [[ -z "$model_name" ]]; then
   info "Auto-derived model name: $model_name"
 fi
 
-code_path="$REPO_ROOT/evaluation"
-[[ -d "$code_path/sil" ]] || fatal "SIL evaluation source not found: $code_path/sil"
-[[ -f "$code_path/.amlignore" ]] || warn "No evaluation/.amlignore found; the AML snapshot may include unrelated files"
+eval_source="$REPO_ROOT/evaluation/sil"
+rl_source="$REPO_ROOT/training/rl"
+[[ -d "$eval_source" ]] || fatal "SIL evaluation source not found: $eval_source"
+[[ -d "$rl_source" ]] || fatal "RL runtime source not found: $rl_source"
+[[ -f "$REPO_ROOT/evaluation/.amlignore" ]] || warn "No evaluation/.amlignore found; the AML snapshot may include unrelated files"
 
 if [[ "$config_preview" == "true" ]]; then
   section "Configuration Preview"
@@ -211,6 +213,20 @@ model_json=$(az ml model show \
 register_azureml_environment "$environment_name" "$environment_version" "$image" \
   "$resource_group" "$workspace_name" "$subscription_id"
 
+#------------------------------------------------------------------------------
+# Stage Code Snapshot
+#------------------------------------------------------------------------------
+# policy_evaluation.py loads Isaac Lab policies (skrl/rsl-rl) and imports
+# training.rl.simulation_shutdown, so the job needs the training/rl runtime next
+# to evaluation/sil. Azure ML's single code root cannot span two top-level trees,
+# so stage both into one directory (mirrors the OSMO eval payload set).
+code_path="$(mktemp -d)"
+trap 'rm -rf "$code_path"' EXIT
+mkdir -p "$code_path/training" "$code_path/evaluation"
+cp -R "$rl_source" "$code_path/training/rl"
+cp -R "$eval_source" "$code_path/evaluation/sil"
+[[ -f "$REPO_ROOT/evaluation/.amlignore" ]] && cp "$REPO_ROOT/evaluation/.amlignore" "$code_path/.amlignore"
+
 info "Code path: $code_path"
 info "Environment: ${environment_name}:${environment_version}"
 
@@ -250,10 +266,10 @@ cmd="$cmd --success-threshold \${{inputs.success_threshold}}"
 
 [[ "$headless" == "true" ]] && cmd="$cmd --headless"
 
-# AML snapshots evaluation/ as the code root, so recreate the top-level evaluation path
-# expected by the shell entrypoint and Python imports inside the job container.
+# The staged snapshot has evaluation/ and training/ at its root, so the entrypoint
+# path and first-party imports resolve without any in-container symlink.
 az_args+=(
-  --set "command=if [ ! -e evaluation ]; then ln -s . evaluation; fi && bash evaluation/sil/evaluation.sh $cmd"
+  --set "command=bash evaluation/sil/evaluation.sh $cmd"
   --set "inputs.task=${task:-auto}"
   --set "inputs.framework=${framework:-auto}"
   --set "inputs.success_threshold=${threshold:--1.0}"

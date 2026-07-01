@@ -39,7 +39,7 @@ inputs:
       Evaluation output from the evaluate step. Not consumed by the
       registration logic — present only to express the DAG data dependency.
 
-environment: azureml:lerobot-inference-env:latest
+environment: azureml:lerobot-inference-env:1.0.0
 
 command: >-
   bash -c '

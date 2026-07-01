@@ -53,7 +53,7 @@ outputs:
       (VLA schema v1 aggregate verdict), failure_cases.jsonl (VLA schema v1
       per-episode failure records), plus trajectory plots.
 
-environment: azureml:lerobot-inference-env:latest
+environment: azureml:lerobot-inference-env:1.0.0
 
 # Bridge pipeline-mounted inputs/output into the env-var ABI run_evaluation.py
 # expects:
@@ -69,11 +69,29 @@ environment: azureml:lerobot-inference-env:latest
 command: >-
   bash -c '
   set -euo pipefail;
+  if ! python -c "import av, pyarrow, lerobot" >/dev/null 2>&1; then
+    apt-get update -qq && apt-get install -y -qq ffmpeg git build-essential >/dev/null 2>&1;
+    pip install --quiet --break-system-packages uv==0.7.12;
+    LEROBOT_PROJECT="training/il/lerobot";
+    if [[ ! -f "${LEROBOT_PROJECT}/uv.lock" ]]; then
+      echo "ERROR: LeRobot lockfile not found at ${LEROBOT_PROJECT}/uv.lock" >&2;
+      exit 1;
+    fi;
+    LEROBOT_VENV="${LEROBOT_VENV:-/opt/lerobot-venv}";
+    uv python install 3.12;
+    uv venv --python 3.12 "${LEROBOT_VENV}";
+    source "${LEROBOT_VENV}/bin/activate";
+    uv export --frozen --no-hashes --no-emit-project --project "${LEROBOT_PROJECT}" |
+      uv pip install --no-cache-dir --no-deps -r -;
+  fi;
   export POLICY_REPO_ID="$AZURE_ML_INPUT_model_checkpoint";
+  if [[ ! -f "$POLICY_REPO_ID/config.json" && -f "$POLICY_REPO_ID/checkpoints/last/config.json" ]]; then
+    export POLICY_REPO_ID="$POLICY_REPO_ID/checkpoints/last";
+  fi;
   if [[ -n "${AZURE_ML_INPUT_prepared_dataset:-}" ]]; then
     : "${DATASET_REPO_ID:?DATASET_REPO_ID required when prepared_dataset is provided}";
     case "$DATASET_REPO_ID" in
-      /*|*..*) echo "DATASET_REPO_ID must be relative (no /, no ..): $DATASET_REPO_ID" >&2; exit 1 ;;
+      /*|*..*) echo "DATASET_REPO_ID must be relative (no absolute path, no ..): $DATASET_REPO_ID" >&2; exit 1 ;;
     esac;
     export DATASET_DIR="$AZURE_ML_INPUT_prepared_dataset/$DATASET_REPO_ID";
     echo "[BRIDGE] DATASET_DIR=$DATASET_DIR";
