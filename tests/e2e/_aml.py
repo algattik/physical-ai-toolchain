@@ -152,8 +152,16 @@ _AML_ISAAC_EVAL_MODEL_ENV = "E2E_AML_ISAAC_EVAL_MODEL"
 _OSMO_LEROBOT_EVAL_JOB_FILE = "evaluation/sil/workflows/azureml/lerobot-eval.yaml"
 
 
-def _aml_lerobot_eval_policy_source_args() -> tuple[list[str], str]:
-    """Resolve the eval policy source for the AzureML LeRobot eval submission.
+@dataclass(frozen=True)
+class AmlLeRobotEvalPolicySource:
+    """Resolved policy source for the AzureML LeRobot eval submission."""
+
+    args: tuple[str, ...]
+    description: str
+
+
+def resolve_aml_lerobot_eval_policy_source() -> AmlLeRobotEvalPolicySource:
+    """Resolve the eval policy source, skipping the test early if none is configured.
 
     Unlike the OSMO LeRobot eval script, ``submit-azureml-lerobot-eval.sh`` has no
     ``--builtin-policy`` option, so a real policy must be supplied. Configure one of:
@@ -161,11 +169,14 @@ def _aml_lerobot_eval_policy_source_args() -> tuple[list[str], str]:
     - ``E2E_AML_LEROBOT_EVAL_POLICY_REPO_ID`` — a HuggingFace policy repo id.
     - ``E2E_AML_LEROBOT_EVAL_MODEL`` — an AzureML model ``name:version``.
 
-    The test skips when neither is set (there is nothing to evaluate).
+    Resolve this before staging any dataset so the skip does not waste that work.
     """
     policy_repo_id = env_value(_AML_LEROBOT_EVAL_POLICY_REPO_ENV)
     if policy_repo_id:
-        return ["--policy-repo-id", policy_repo_id], f"HuggingFace policy repo {policy_repo_id}"
+        return AmlLeRobotEvalPolicySource(
+            args=("--policy-repo-id", policy_repo_id),
+            description=f"HuggingFace policy repo {policy_repo_id}",
+        )
 
     model = env_value(_AML_LEROBOT_EVAL_MODEL_ENV)
     if not model:
@@ -181,19 +192,17 @@ def _aml_lerobot_eval_policy_source_args() -> tuple[list[str], str]:
     if not model_name or not model_version:
         pytest.skip(f"{_AML_LEROBOT_EVAL_MODEL_ENV} must include a non-empty AzureML model name and version")
 
-    return [
-        "--from-aml-model",
-        "--model-name",
-        model_name,
-        "--model-version",
-        model_version,
-    ], f"AzureML model {model_name}:{model_version}"
+    return AmlLeRobotEvalPolicySource(
+        args=("--from-aml-model", "--model-name", model_name, "--model-version", model_version),
+        description=f"AzureML model {model_name}:{model_version}",
+    )
 
 
 def submit_aml_lerobot_eval(
     repo_root: Path,
     aml_workspace: AzureMLWorkspace,
     *,
+    policy_source: AmlLeRobotEvalPolicySource,
     policy_type: str,
     eval_episodes: int,
     eval_batch_size: int,
@@ -201,7 +210,8 @@ def submit_aml_lerobot_eval(
     blob_container: str,
     blob_prefix: str,
 ) -> AzureMLJob:
-    policy_args, policy_description = _aml_lerobot_eval_policy_source_args()
+    policy_args = list(policy_source.args)
+    policy_description = policy_source.description
     experiment_name = e2e_name("il-eval-e2e-aml")
     log_e2e(
         "Submitting AzureML LeRobot eval job "

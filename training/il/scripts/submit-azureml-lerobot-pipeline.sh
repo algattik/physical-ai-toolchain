@@ -380,7 +380,9 @@ az_args+=(
   --set "inputs.compute_train=$compute_train"
   --set "inputs.compute_evaluate=$compute_evaluate"
 )
-[[ -n "$preprocessing_config" ]] && az_args+=(--set "inputs.preprocessing_config=$preprocessing_config")
+# preprocessing_config is an optional input on the preprocess component (not a
+# pipeline-level input, which cannot be optional), so override the step input directly.
+[[ -n "$preprocessing_config" ]] && az_args+=(--set "jobs.preprocess_step.inputs.preprocessing_config=$preprocessing_config")
 
 if [[ "$with_register" == "true" ]]; then
   az_args+=(

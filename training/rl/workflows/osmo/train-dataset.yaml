@@ -8,6 +8,7 @@ workflow:
       cpu: {{ cpu }}
       memory: {{ memory }}
       storage: {{ storage }}
+      platform: gpu_platform
   tasks:
     - name: isaac-training
       image: "{{ image }}"

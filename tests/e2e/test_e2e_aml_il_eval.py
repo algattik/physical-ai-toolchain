@@ -23,6 +23,7 @@ import pytest
 from tests.e2e._aml import (
     AzureMLWorkspace,
     cancel_aml_job,
+    resolve_aml_lerobot_eval_policy_source,
     submit_aml_lerobot_eval,
     wait_until_aml_completed,
     wait_until_aml_started,
@@ -41,10 +42,13 @@ def test_aml_il_eval_e2e(
     storage_account: str,
 ) -> None:
     log_e2e("Starting AzureML IL (LeRobot) eval e2e test")
+    # Resolve the policy source first so an unconfigured skip does not waste dataset staging.
+    policy_source = resolve_aml_lerobot_eval_policy_source()
     dataset = stage_synthetic_lerobot_dataset(request, repo_root, storage_account)
     job = submit_aml_lerobot_eval(
         repo_root,
         aml_workspace,
+        policy_source=policy_source,
         policy_type="act",
         eval_episodes=1,
         eval_batch_size=1,

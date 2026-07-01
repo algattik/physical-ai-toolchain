@@ -46,11 +46,6 @@ inputs:
     type: string
     description: >-
       HuggingFace-style dataset repo id; must match the dataset folder name.
-  preprocessing_config:
-    type: uri_file
-    optional: true
-    description: >-
-      Optional preprocessing_config.yaml from a previous pipeline run.
   policy_type:
     type: string
     default: act
@@ -94,7 +89,6 @@ jobs:
     inputs:
       dataset: ${{parent.inputs.dataset}}
       dataset_repo_id: ${{parent.inputs.dataset_repo_id}}
-      preprocessing_config: ${{parent.inputs.preprocessing_config}}
 
   train_step:
     type: command
