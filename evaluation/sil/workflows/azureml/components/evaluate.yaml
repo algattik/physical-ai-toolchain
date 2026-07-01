@@ -85,8 +85,20 @@ command: >-
       uv pip install --no-cache-dir --no-deps -r -;
   fi;
   export POLICY_REPO_ID="$AZURE_ML_INPUT_model_checkpoint";
-  if [[ ! -f "$POLICY_REPO_ID/config.json" && -f "$POLICY_REPO_ID/checkpoints/last/config.json" ]]; then
-    export POLICY_REPO_ID="$POLICY_REPO_ID/checkpoints/last";
+  if [[ ! -f "$POLICY_REPO_ID/config.json" ]]; then
+    checkpoint_config="";
+    for candidate in "$POLICY_REPO_ID/checkpoints/last" "$POLICY_REPO_ID/last"; do
+      if [[ -f "$candidate/config.json" ]]; then
+        checkpoint_config="$candidate/config.json";
+        break;
+      fi;
+    done;
+    if [[ -z "$checkpoint_config" ]]; then
+      checkpoint_config="$(find "$POLICY_REPO_ID" -maxdepth 4 -type f -name config.json | sort | tail -n 1 || true)";
+    fi;
+    if [[ -n "$checkpoint_config" ]]; then
+      export POLICY_REPO_ID="$(dirname "$checkpoint_config")";
+    fi;
   fi;
   if [[ -n "${AZURE_ML_INPUT_prepared_dataset:-}" ]]; then
     : "${DATASET_REPO_ID:?DATASET_REPO_ID required when prepared_dataset is provided}";

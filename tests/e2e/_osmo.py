@@ -24,9 +24,35 @@ from tests.e2e._common import (
     wait_for_status,
 )
 
-OSMO_STARTED_STATES = {"RUNNING", "COMPLETED", "SUCCEEDED"}
+OSMO_SUCCESS_STATES = {"COMPLETED", "SUCCEEDED"}
+OSMO_STARTED_STATES = {"RUNNING", *OSMO_SUCCESS_STATES}
 OSMO_FAILURE_PREFIXES = ("FAILED",)
 OSMO_FAILURE_STATES = {"CANCELLED", "CANCELED", "ERROR"}
+
+# Terminal statuses that reflect the GPU node disappearing (spot reclaim, cluster
+# autoscaler consolidation, or a manual drain) rather than a defect in the workload.
+# OSMO maps a Kubernetes DisruptionTarget eviction to FAILED_BACKEND_ERROR and scheduler
+# preemption to FAILED_PREEMPTED/FAILED_EVICTED. These are recovered by restarting the
+# workflow in place; genuine application failures (FAILED, FAILED_EXEC_TIMEOUT, ...) are not.
+OSMO_NODE_DISRUPTION_STATES = {"FAILED_BACKEND_ERROR", "FAILED_EVICTED", "FAILED_PREEMPTED"}
+
+# Non-terminal statuses a workflow passes through once a restart has taken effect.
+OSMO_ALIVE_STATES = {
+    "SUBMITTING",
+    "WAITING",
+    "PROCESSING",
+    "SCHEDULING",
+    "INITIALIZING",
+    "RUNNING",
+    "RESCHEDULED",
+}
+
+# Spot A100 capacity is reclaimed occasionally, not continuously, so a small restart budget
+# survives isolated evictions without masking a genuinely unschedulable or defective job.
+_OSMO_MAX_NODE_DISRUPTION_RESTARTS = 3
+# A restart only has to move the workflow out of its terminal FAILED status back into an
+# alive status; that transition is fast even though the subsequent cold start is not.
+_OSMO_RESTART_SETTLE_TIMEOUT_MINUTES = 10
 
 # A workflow only reports RUNNING once its task container is live, so the "started"
 # wait must absorb a full cold scale-from-zero path: GPU node provisioning, NVIDIA
@@ -203,6 +229,10 @@ def _osmo_status(payload: Mapping[str, Any]) -> str:
     return status or "UNKNOWN"
 
 
+def _current_osmo_status(workflow: OSMOWorkflow, repo_root: Path) -> str:
+    return _osmo_status(_fetch_osmo_workflow_payload(workflow, repo_root))
+
+
 def wait_until_osmo_started(
     workflow: OSMOWorkflow,
     repo_root: Path,
@@ -211,7 +241,7 @@ def wait_until_osmo_started(
     poll_interval_seconds: int = OSMO_POLL_INTERVAL_SECONDS,
 ) -> None:
     wait_for_status(
-        lambda: _osmo_status(_fetch_osmo_workflow_payload(workflow, repo_root)),
+        lambda: _current_osmo_status(workflow, repo_root),
         goal_description=f"OSMO workflow {workflow.workflow_id} to start",
         timeout_minutes=timeout_minutes,
         poll_interval_seconds=poll_interval_seconds,
@@ -228,24 +258,78 @@ def wait_until_osmo_completed(
     timeout_minutes: int,
     poll_interval_seconds: int = OSMO_POLL_INTERVAL_SECONDS,
 ) -> None:
-    terminal_status = wait_for_status(
-        lambda: _osmo_status(_fetch_osmo_workflow_payload(workflow, repo_root)),
-        goal_description=f"OSMO workflow {workflow.workflow_id} to complete",
-        timeout_minutes=timeout_minutes,
-        poll_interval_seconds=poll_interval_seconds,
-        success_statuses={"COMPLETED", "SUCCEEDED"},
-        failure_statuses=OSMO_FAILURE_STATES,
-        failure_matcher=lambda status: any(status.startswith(prefix) for prefix in OSMO_FAILURE_PREFIXES),
-        on_failure=lambda status: _mark_workflow_terminal(workflow, status),
-        status_log_prefix="Completion poll status",
-    )
-    _mark_workflow_terminal(workflow, terminal_status)
-    log_e2e(f"OSMO workflow {workflow.workflow_id} completed successfully")
+    # A node-disruption terminal (spot reclaim, autoscaler drain, preemption) is not a
+    # workload defect: exit the completion poll on it so the workflow can be restarted in
+    # place, and reserve a raised failure for a genuine application failure.
+    def _is_application_failure(status: str) -> bool:
+        return (
+            any(status.startswith(prefix) for prefix in OSMO_FAILURE_PREFIXES)
+            and status not in OSMO_NODE_DISRUPTION_STATES
+        )
+
+    for restart_count in range(_OSMO_MAX_NODE_DISRUPTION_RESTARTS + 1):
+        terminal_status = wait_for_status(
+            lambda: _current_osmo_status(workflow, repo_root),
+            goal_description=f"OSMO workflow {workflow.workflow_id} to complete",
+            timeout_minutes=timeout_minutes,
+            poll_interval_seconds=poll_interval_seconds,
+            success_statuses=OSMO_SUCCESS_STATES | OSMO_NODE_DISRUPTION_STATES,
+            failure_statuses=OSMO_FAILURE_STATES,
+            failure_matcher=_is_application_failure,
+            on_failure=lambda status: _mark_workflow_terminal(workflow, status),
+            status_log_prefix="Completion poll status",
+        )
+        if terminal_status.upper() in OSMO_SUCCESS_STATES:
+            _mark_workflow_terminal(workflow, terminal_status)
+            log_e2e(f"OSMO workflow {workflow.workflow_id} completed successfully")
+            return
+
+        if restart_count >= _OSMO_MAX_NODE_DISRUPTION_RESTARTS:
+            _mark_workflow_terminal(workflow, terminal_status)
+            raise AssertionError(
+                f"OSMO workflow {workflow.workflow_id} kept failing with node-disruption status "
+                f"{terminal_status!r} across {_OSMO_MAX_NODE_DISRUPTION_RESTARTS} restarts"
+            )
+
+        log_e2e(
+            f"OSMO workflow {workflow.workflow_id} hit node-disruption status {terminal_status}; "
+            f"restarting in place (attempt {restart_count + 1}/{_OSMO_MAX_NODE_DISRUPTION_RESTARTS})"
+        )
+        _restart_osmo_workflow(workflow, repo_root)
+        _wait_until_osmo_restarted(workflow, repo_root, poll_interval_seconds=poll_interval_seconds)
 
 
 def _mark_workflow_terminal(workflow: OSMOWorkflow, terminal_status: str) -> None:
     workflow.is_terminal = True
     workflow.terminal_status = terminal_status
+
+
+def _restart_osmo_workflow(workflow: OSMOWorkflow, repo_root: Path) -> None:
+    log_e2e(f"Restarting OSMO workflow {workflow.workflow_id} after node disruption")
+    result = run_command(["osmo", "workflow", "restart", workflow.workflow_id], cwd=repo_root)
+    if result.returncode != 0:
+        raise AssertionError(
+            f"Failed to restart OSMO workflow {workflow.workflow_id!r}\n\n{format_command_failure(result)}"
+        )
+
+
+def _wait_until_osmo_restarted(
+    workflow: OSMOWorkflow,
+    repo_root: Path,
+    *,
+    poll_interval_seconds: int = OSMO_POLL_INTERVAL_SECONDS,
+) -> None:
+    # `osmo workflow restart` reuses the workflow id, but the query briefly still reports the
+    # prior FAILED status; poll (tolerating that stale terminal) until the workflow re-enters an
+    # alive status or has already completed, so the completion wait does not re-read the stale one.
+    wait_for_status(
+        lambda: _current_osmo_status(workflow, repo_root),
+        goal_description=f"OSMO workflow {workflow.workflow_id} to resume after restart",
+        timeout_minutes=_OSMO_RESTART_SETTLE_TIMEOUT_MINUTES,
+        poll_interval_seconds=poll_interval_seconds,
+        success_statuses=OSMO_ALIVE_STATES | OSMO_SUCCESS_STATES,
+        status_log_prefix="Restart poll status",
+    )
 
 
 def assert_workflow_task_succeeded(workflow: OSMOWorkflow, repo_root: Path, task_name: str) -> None:
