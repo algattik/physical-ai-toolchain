@@ -69,6 +69,7 @@ class TestSafeThroughput:
 def _make_args(**overrides) -> SimpleNamespace:
     defaults = dict(
         policy_path="/tmp/policy",
+        policy_revision="abc123",
         model_name=None,
         model_version=None,
         dataset_dir="/tmp/ds",
@@ -392,6 +393,18 @@ class TestRunEvaluation:
         assert (out / "ep000_predictions.npz").exists()
         assert (out / "plots" / "ep000_action_deltas.png").exists()
 
+    def test_remote_policy_without_revision_raises(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+        _setup_run_evaluation(monkeypatch, tmp_path, n_frames=5)
+        args = _make_args(
+            dataset_dir=str(tmp_path),
+            output_dir=str(tmp_path / "out"),
+            policy_path="owner/policy",
+            policy_revision=None,
+        )
+
+        with pytest.raises(ValueError, match="--policy-revision is required"):
+            _mod.run_evaluation(args)
+
     def test_strips_config_fields(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
         _setup_run_evaluation(monkeypatch, tmp_path, n_frames=5)
         policy_dir = tmp_path / "policy"
@@ -402,6 +415,7 @@ class TestRunEvaluation:
             dataset_dir=str(tmp_path),
             output_dir=str(tmp_path / "out"),
             policy_path=str(policy_dir),
+            policy_revision=None,
         )
         _mod.run_evaluation(args)
         new_cfg = json.loads((policy_dir / "config.json").read_text())
@@ -417,6 +431,7 @@ class TestRunEvaluation:
             dataset_dir=str(tmp_path),
             output_dir=str(tmp_path / "out"),
             policy_path=str(policy_dir),
+            policy_revision=None,
         )
         _mod.run_evaluation(args)
         assert json.loads((policy_dir / "config.json").read_text()) == {"keep": 1}
@@ -500,6 +515,7 @@ class TestRunEvaluation:
             dataset_dir=str(tmp_path),
             output_dir=str(tmp_path / "out"),
             policy_path=None,
+            policy_revision=None,
             model_name="m",
             model_version="1",
         )

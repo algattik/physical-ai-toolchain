@@ -17,15 +17,24 @@ Usage:
         --episode 0 --num-steps 30
 """
 
+from __future__ import annotations
+
 import argparse
 import json
 import os
 import sys
 import time
+from pathlib import Path
 
 import numpy as np
 import pyarrow.parquet as pq
 import torch
+
+_EVALUATION_ROOT = Path(__file__).resolve().parents[2]
+if str(_EVALUATION_ROOT) not in sys.path:
+    sys.path.insert(0, str(_EVALUATION_ROOT))
+
+from sil.hf_revision import resolve_hf_revision  # noqa: E402
 
 
 def load_video_frame(dataset_dir: str, episode: int, frame: int) -> np.ndarray:
@@ -88,7 +97,8 @@ def run_inference_test(args: argparse.Namespace) -> None:
     # Load policy
     print(f"Loading policy from: {args.policy_repo}")
     t0 = time.time()
-    policy = ACTPolicy.from_pretrained(args.policy_repo, revision=args.policy_revision)
+    policy_revision = resolve_hf_revision(args.policy_repo, args.policy_revision, revision_name="--policy-revision")
+    policy = ACTPolicy.from_pretrained(args.policy_repo, revision=policy_revision)
     policy.to(device)
     load_time = time.time() - t0
     print(f"  loaded in {load_time:.1f}s ({sum(p.numel() for p in policy.parameters()) / 1e6:.1f}M params)")
@@ -98,13 +108,13 @@ def run_inference_test(args: argparse.Namespace) -> None:
     preprocessor = PolicyProcessorPipeline.from_pretrained(
         args.policy_repo,
         "policy_preprocessor.json",
-        revision=args.policy_revision,
+        revision=policy_revision,
         overrides=device_override,
     )
     postprocessor = PolicyProcessorPipeline.from_pretrained(
         args.policy_repo,
         "policy_postprocessor.json",
-        revision=args.policy_revision,
+        revision=policy_revision,
         overrides=device_override,
     )
     print(f"  preprocessor: {[type(s).__name__ for s in preprocessor.steps]}")

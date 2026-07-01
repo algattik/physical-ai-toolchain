@@ -19,6 +19,7 @@ from dataclasses import dataclass
 import numpy as np
 import torch
 
+from .hf_revision import resolve_hf_revision
 from .robot_types import (
     NUM_JOINTS,
     JointPositionCommand,
@@ -94,6 +95,7 @@ class PolicyRunner:
         from lerobot.processor.pipeline import PolicyProcessorPipeline
 
         device = _resolve_device(device)
+        revision = resolve_hf_revision(repo_id, revision, revision_name="revision")
 
         policy = ACTPolicy.from_pretrained(repo_id, revision=revision)
         policy.to(device)

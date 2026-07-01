@@ -45,7 +45,7 @@ def _load_download_dataset_module() -> ModuleType:
     """Load the training-runtime download_dataset module (not an importable package).
 
     Reuses its ``write_checksum_manifest`` so the staged dataset carries the same
-    ``meta/checksums.sha256`` the training pod verifies after download (G6).
+    ``meta/checksums.sha256`` the training pod verifies after download.
     """
     spec = importlib.util.spec_from_file_location(
         "_e2e_download_dataset", _REPO_ROOT / "training" / "il" / "scripts" / "lerobot" / "download_dataset.py"
