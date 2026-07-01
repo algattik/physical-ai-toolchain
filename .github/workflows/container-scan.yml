@@ -83,8 +83,11 @@ jobs:
           IMAGE: ${{ matrix.image }}
         run: |
           set -euo pipefail
+          # Append a short image-digest hash so two images that collapse to the
+          # same alphanumeric slug still get distinct SARIF files and categories.
+          hash=$(printf '%s' "$IMAGE" | sha256sum | cut -c1-12)
           slug=$(printf '%s' "$IMAGE" | tr -c 'a-zA-Z0-9' '-' | sed 's/-\{2,\}/-/g; s/^-//; s/-$//')
-          echo "slug=$slug" >> "$GITHUB_OUTPUT"
+          echo "slug=${slug}-${hash}" >> "$GITHUB_OUTPUT"
         shell: bash
 
       # Trivy writes the SARIF report before applying exit-code, so a gating

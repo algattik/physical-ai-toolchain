@@ -255,7 +255,7 @@ workflow:
             # Authenticate with HuggingFace Hub
             echo "Authenticating with HuggingFace Hub..."
             if [[ -n "${HF_TOKEN:-}" ]]; then
-              python3 -c "from huggingface_hub import login; login(token='${HF_TOKEN}', add_to_git_credential=False)"
+              python3 -c "import os; from huggingface_hub import login; login(token=os.environ['HF_TOKEN'], add_to_git_credential=False)"
             else
               echo "Warning: HF_TOKEN not set, skipping HuggingFace authentication"
             fi
@@ -585,14 +585,18 @@ workflow:
                     JOINT_NAMES = [f"joint_{j}" for j in range(n_action)]
                 print(f"[INFO] Action dims: {len(JOINT_NAMES)} — {JOINT_NAMES[:4]}{'...' if len(JOINT_NAMES) > 4 else ''}")
 
-                # Discover image key from dataset features
-                image_key = None
-                for key, feat in info.get("features", {}).items():
-                    if key.startswith("observation.images."):
-                        image_key = key
-                        break
-                if image_key is None:
-                    image_key = "observation.images.color"
+                # Discover image key from dataset features: prefer an
+                # observation.images.* camera, else the first video/image
+                # feature, else a conventional default.
+                features = info.get("features", {})
+                video_keys = [
+                    k for k, v in features.items()
+                    if v.get("dtype") in ("video", "image")
+                ]
+                image_key = next(
+                    (k for k in video_keys if k.startswith("observation.images.")),
+                    video_keys[0] if video_keys else "observation.images.color",
+                )
                 print(f"[INFO] Using image key: {image_key}")
 
                 # Load policy (LeRobot 0.3.x — normalize/unnormalize handled internally)

@@ -331,10 +331,14 @@ def main() -> int:
         info = json.load(f)
     fps = info["fps"]
 
-    # Identify video key from features
+    # Identify image key: prefer an observation.images.* camera, else the
+    # first video/image feature, else a conventional default.
     features = info.get("features", {})
     video_keys = [k for k, v in features.items() if v.get("dtype") in ("video", "image")]
-    image_key = video_keys[0] if video_keys else "observation.images.color"
+    image_key = next(
+        (k for k in video_keys if k.startswith("observation.images.")),
+        video_keys[0] if video_keys else "observation.images.color",
+    )
 
     # Load policy (normalization is handled internally by select_action)
     print(f"[INFO] Loading policy from: {policy_repo_id}")

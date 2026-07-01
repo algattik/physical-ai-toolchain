@@ -142,6 +142,7 @@ workflow:
             TRAIN_ARGS=(
               "--policy.push_to_hub=false"
               "--wandb.enable=false"
+              "--dataset.video_backend=pyav"
             )
 
             # Download dataset from Azure Blob Storage when configured
@@ -154,7 +155,6 @@ workflow:
               TRAIN_ARGS+=(
                 "--dataset.root=${FULL_DATASET_PATH}"
                 "--dataset.use_imagenet_stats=false"
-                "--dataset.video_backend=pyav"
               )
             fi
 
