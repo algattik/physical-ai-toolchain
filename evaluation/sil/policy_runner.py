@@ -77,6 +77,7 @@ class PolicyRunner:
         cls,
         repo_id: str,
         device: str = "cuda",
+        revision: str | None = None,
     ) -> PolicyRunner:
         """Load a trained ACT policy and its normalization processors.
 
@@ -84,24 +85,30 @@ class PolicyRunner:
             repo_id: HuggingFace repo ID or local path containing
                 ``config.json``, ``model.safetensors``, and processor JSONs.
             device: Target device (``cuda``, ``cpu``, ``mps``).
+            revision: Immutable HuggingFace commit SHA (or branch/tag) to pin the
+                download. Ignored for local paths; supply a pinned SHA in
+                production to prevent an upstream repo from silently shipping new
+                weights.
         """
         from lerobot.policies.act.modeling_act import ACTPolicy
         from lerobot.processor.pipeline import PolicyProcessorPipeline
 
         device = _resolve_device(device)
 
-        policy = ACTPolicy.from_pretrained(repo_id)
+        policy = ACTPolicy.from_pretrained(repo_id, revision=revision)
         policy.to(device)
 
         device_override = {"device_processor": {"device": device}}
         preprocessor = PolicyProcessorPipeline.from_pretrained(
             repo_id,
             "policy_preprocessor.json",
+            revision=revision,
             overrides=device_override,
         )
         postprocessor = PolicyProcessorPipeline.from_pretrained(
             repo_id,
             "policy_postprocessor.json",
+            revision=revision,
             overrides=device_override,
         )
 

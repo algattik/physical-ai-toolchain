@@ -88,7 +88,7 @@ def run_inference_test(args: argparse.Namespace) -> None:
     # Load policy
     print(f"Loading policy from: {args.policy_repo}")
     t0 = time.time()
-    policy = ACTPolicy.from_pretrained(args.policy_repo)
+    policy = ACTPolicy.from_pretrained(args.policy_repo, revision=args.policy_revision)
     policy.to(device)
     load_time = time.time() - t0
     print(f"  loaded in {load_time:.1f}s ({sum(p.numel() for p in policy.parameters()) / 1e6:.1f}M params)")
@@ -98,11 +98,13 @@ def run_inference_test(args: argparse.Namespace) -> None:
     preprocessor = PolicyProcessorPipeline.from_pretrained(
         args.policy_repo,
         "policy_preprocessor.json",
+        revision=args.policy_revision,
         overrides=device_override,
     )
     postprocessor = PolicyProcessorPipeline.from_pretrained(
         args.policy_repo,
         "policy_postprocessor.json",
+        revision=args.policy_revision,
         overrides=device_override,
     )
     print(f"  preprocessor: {[type(s).__name__ for s in preprocessor.steps]}")
@@ -224,6 +226,11 @@ def main() -> None:
         "--policy-repo",
         default="alizaidi/hve-robo-act-train",
         help="HuggingFace repo ID or local path to trained policy",
+    )
+    parser.add_argument(
+        "--policy-revision",
+        default=None,
+        help="HuggingFace commit SHA to pin the policy download (ignored for local paths)",
     )
     parser.add_argument(
         "--dataset-dir",

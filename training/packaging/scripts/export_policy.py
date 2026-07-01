@@ -8,6 +8,7 @@ Auto-detects observation and action dimensions from checkpoint weights.
 
 import argparse
 import copy
+import hashlib
 import os
 import sys
 from dataclasses import dataclass
@@ -113,7 +114,7 @@ def infer_architecture_from_checkpoint(checkpoint_path: str) -> PolicyArchitectu
     Raises:
         ValueError: If checkpoint structure is invalid or actor weights not found.
     """
-    checkpoint = torch.load(checkpoint_path, map_location="cpu", weights_only=False)
+    checkpoint = torch.load(checkpoint_path, map_location="cpu", weights_only=True)
 
     if "model_state_dict" not in checkpoint:
         raise ValueError("Checkpoint missing 'model_state_dict' key")
@@ -184,7 +185,7 @@ def load_actor_from_checkpoint(
 
     print(f"Policy architecture: {arch}")
 
-    checkpoint = torch.load(checkpoint_path, map_location="cpu", weights_only=False)
+    checkpoint = torch.load(checkpoint_path, map_location="cpu", weights_only=True)
     state_dict = checkpoint["model_state_dict"]
 
     # Build actor network
@@ -207,6 +208,25 @@ def load_actor_from_checkpoint(
         print(f"Found normalizer keys: {normalizer_keys}")
 
     return actor, normalizer, arch
+
+
+def _write_sha256_sidecar(filepath: str) -> str:
+    """Write a ``sha256sum``-format ``<filepath>.sha256`` next to ``filepath``.
+
+    Consumed by ``play_policy._verify_jit_integrity`` to reject a substituted
+    TorchScript model before ``torch.jit.load`` deserializes it.
+
+    Returns:
+        Path to the written sidecar.
+    """
+    digest = hashlib.sha256()
+    with open(filepath, "rb") as f:
+        for chunk in iter(lambda: f.read(1024 * 1024), b""):
+            digest.update(chunk)
+    sidecar = f"{filepath}.sha256"
+    with open(sidecar, "w", encoding="utf-8") as f:
+        f.write(f"{digest.hexdigest()}  {os.path.basename(filepath)}\n")
+    return sidecar
 
 
 def export_policy(
@@ -246,6 +266,7 @@ def export_policy(
         print("Exporting JIT model...")
         exporter = _TorchPolicyExporter(actor, normalizer)
         jit_path = exporter.export(output_dir, "policy.pt")
+        _write_sha256_sidecar(jit_path)
         exported["jit"] = jit_path
         print(f"  -> {jit_path}")
 

@@ -939,3 +939,57 @@ class TestParseEnvConfig:
         monkeypatch.setenv("BLOB_URLS", '["  https://a.blob.core.windows.net/c/p  "]')
         _root, _repo, urls = _MOD._parse_env_config()
         assert urls == ["https://a.blob.core.windows.net/c/p"]
+
+
+def _seed_dataset(root: Path) -> None:
+    (root / "meta").mkdir(parents=True, exist_ok=True)
+    (root / "data").mkdir(parents=True, exist_ok=True)
+    (root / "meta" / "info.json").write_bytes(b'{"fps": 30}')
+    (root / "data" / "episode.parquet").write_bytes(b"episode-bytes")
+
+
+class TestChecksumManifest:
+    def test_write_manifest_lists_all_files_excluding_itself(self, tmp_path):
+        import hashlib
+
+        _seed_dataset(tmp_path)
+
+        manifest = _MOD.write_checksum_manifest(tmp_path)
+
+        assert manifest == tmp_path / "meta" / "checksums.sha256"
+        lines = manifest.read_text(encoding="utf-8").splitlines()
+        parsed = dict(reversed(line.split("  ", 1)) for line in lines)
+        assert set(parsed) == {"data/episode.parquet", "meta/info.json"}
+        assert "meta/checksums.sha256" not in parsed
+        assert parsed["data/episode.parquet"] == hashlib.sha256(b"episode-bytes").hexdigest()
+
+    def test_verify_passes_on_intact_tree(self, tmp_path, capsys):
+        _seed_dataset(tmp_path)
+        _MOD.write_checksum_manifest(tmp_path)
+
+        _MOD.verify_checksums(tmp_path)
+
+        assert "Verified 2 files" in capsys.readouterr().out
+
+    def test_verify_rejects_tampered_file(self, tmp_path):
+        _seed_dataset(tmp_path)
+        _MOD.write_checksum_manifest(tmp_path)
+        (tmp_path / "data" / "episode.parquet").write_bytes(b"poisoned")
+
+        with pytest.raises(RuntimeError, match=r"mismatch: data/episode\.parquet"):
+            _MOD.verify_checksums(tmp_path)
+
+    def test_verify_rejects_missing_file(self, tmp_path):
+        _seed_dataset(tmp_path)
+        _MOD.write_checksum_manifest(tmp_path)
+        (tmp_path / "data" / "episode.parquet").unlink()
+
+        with pytest.raises(RuntimeError, match=r"missing: data/episode\.parquet"):
+            _MOD.verify_checksums(tmp_path)
+
+    def test_verify_warns_when_manifest_absent(self, tmp_path, capsys):
+        _seed_dataset(tmp_path)
+
+        _MOD.verify_checksums(tmp_path)
+
+        assert "checksums.sha256 not found" in capsys.readouterr().out

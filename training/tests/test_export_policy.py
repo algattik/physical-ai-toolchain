@@ -179,6 +179,7 @@ class TestExportPolicy:
         load_actor = mocker.patch.object(_MOD, "load_actor_from_checkpoint", return_value=(actor, None, arch))
         jit_export = mocker.patch.object(_MOD._TorchPolicyExporter, "export", return_value="/exports/policy.pt")
         onnx_export = mocker.patch.object(_MOD._OnnxPolicyExporter, "export", return_value="/exports/policy.onnx")
+        sidecar = mocker.patch.object(_MOD, "_write_sha256_sidecar")
 
         exported = _MOD.export_policy(
             checkpoint_path="checkpoint.pt",
@@ -193,6 +194,7 @@ class TestExportPolicy:
         load_actor.assert_called_once_with("checkpoint.pt", 3, 2, [], "relu")
         jit_export.assert_called_once_with(str(tmp_path), "policy.pt")
         onnx_export.assert_called_once_with(str(tmp_path), 3, "policy.onnx")
+        sidecar.assert_called_once_with("/exports/policy.pt")
 
     def test_skips_disabled_export_formats(self, mocker: MockerFixture, tmp_path: Path) -> None:
         actor = torch.nn.Linear(3, 2)
@@ -211,3 +213,30 @@ class TestExportPolicy:
         assert exported == {}
         jit_export.assert_not_called()
         onnx_export.assert_not_called()
+
+
+class TestSha256Sidecar:
+    def test_writes_sha256sum_format_matching_content(self, tmp_path: Path) -> None:
+        import hashlib
+
+        model_path = tmp_path / "policy.pt"
+        model_path.write_bytes(b"scripted-model-bytes")
+
+        sidecar = _MOD._write_sha256_sidecar(str(model_path))
+
+        expected = hashlib.sha256(b"scripted-model-bytes").hexdigest()
+        assert sidecar == str(model_path) + ".sha256"
+        assert Path(sidecar).read_text(encoding="utf-8") == f"{expected}  policy.pt\n"
+
+    def test_load_rejects_weights_only_incompatible_payload(self, tmp_path: Path) -> None:
+        # weights_only=True must refuse a pickle carrying an arbitrary object —
+        # the RCE vector G2 closes. argparse.Namespace is picklable but not in
+        # torch's safe-globals allowlist, so the load is rejected before use.
+        import argparse
+        import pickle
+
+        checkpoint_path = tmp_path / "evil.pt"
+        torch.save({"model_state_dict": {}, "payload": argparse.Namespace(cmd="rm -rf /")}, checkpoint_path)
+
+        with pytest.raises(pickle.UnpicklingError):
+            _MOD.infer_architecture_from_checkpoint(str(checkpoint_path))

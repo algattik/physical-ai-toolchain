@@ -15,6 +15,7 @@ ROS2 Topics:
 
 Parameters:
     policy_repo    (str)  - HuggingFace repo ID or local path
+    policy_revision (str) - HuggingFace commit SHA to pin the policy download
     device         (str)  - Inference device: cuda, cpu, mps
     control_hz     (float) - Control loop frequency
     action_mode    (str)  - "absolute" or "delta"
@@ -23,6 +24,7 @@ Parameters:
 Usage:
     ros2 run lerobot_inference act_inference_node \\
         --ros-args -p policy_repo:=alizaidi/hve-robo-act-train \\
+                   -p policy_revision:=<commit-sha> \\
                    -p device:=cuda \\
                    -p enable_control:=false
 """
@@ -59,6 +61,7 @@ class ACTInferenceNode(Node):
 
         # Declare parameters
         self.declare_parameter("policy_repo", "alizaidi/hve-robo-act-train")
+        self.declare_parameter("policy_revision", "")
         self.declare_parameter("device", "cuda")
         self.declare_parameter("control_hz", float(CONTROL_HZ))
         self.declare_parameter("action_mode", "delta")
@@ -67,6 +70,7 @@ class ACTInferenceNode(Node):
         self.declare_parameter("joint_states_topic", "/joint_states")
 
         policy_repo = self.get_parameter("policy_repo").value
+        policy_revision = self.get_parameter("policy_revision").value or None
         device = self.get_parameter("device").value
         self._control_hz = self.get_parameter("control_hz").value
         self._action_mode = self.get_parameter("action_mode").value
@@ -74,8 +78,8 @@ class ACTInferenceNode(Node):
         camera_topic = self.get_parameter("camera_topic").value
         joint_states_topic = self.get_parameter("joint_states_topic").value
 
-        self.get_logger().info(f"Loading policy: {policy_repo}")
-        self._runner = PolicyRunner.from_pretrained(policy_repo, device=device)
+        self.get_logger().info(f"Loading policy: {policy_repo} (revision={policy_revision or 'unpinned'})")
+        self._runner = PolicyRunner.from_pretrained(policy_repo, device=device, revision=policy_revision)
         self.get_logger().info(f"Policy loaded on {self._runner.device}")
 
         self._state = RobotState()

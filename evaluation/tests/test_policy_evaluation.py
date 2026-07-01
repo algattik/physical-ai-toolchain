@@ -261,7 +261,7 @@ class TestLoadRslRl:
         ):
             result = _load_rsl_rl("/tmp/ckpt.pt", "cpu")
 
-        mock_load.assert_called_once_with("/tmp/ckpt.pt", map_location="cpu", weights_only=False)
+        mock_load.assert_called_once_with("/tmp/ckpt.pt", map_location="cpu", weights_only=True)
         rsl_rl_modules.ActorCritic.assert_called_once_with(a=1)
         policy.load_state_dict.assert_called_once_with({"w": 0})
         policy.eval.assert_called_once()

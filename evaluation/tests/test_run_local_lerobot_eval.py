@@ -182,7 +182,7 @@ def _setup_run_evaluation(
     policy.reset = MagicMock()
 
     act_mod = sys.modules["lerobot.policies.act.modeling_act"]
-    act_mod.ACTPolicy = SimpleNamespace(from_pretrained=lambda _path: policy)
+    act_mod.ACTPolicy = SimpleNamespace(from_pretrained=lambda _path, revision=None: policy)
 
     monkeypatch.setattr(_mod, "_load_normalizer_stats", lambda *_a, **_k: None)
 
@@ -455,7 +455,9 @@ class TestRunEvaluation:
         policy = MagicMock()
         policy.parameters.return_value = [torch.zeros(1)]
         policy.to.return_value = policy
-        sys.modules["lerobot.policies.act.modeling_act"].ACTPolicy = SimpleNamespace(from_pretrained=lambda _p: policy)
+        sys.modules["lerobot.policies.act.modeling_act"].ACTPolicy = SimpleNamespace(
+            from_pretrained=lambda _p, revision=None: policy
+        )
         monkeypatch.setattr(_mod, "_load_normalizer_stats", lambda *_a, **_k: None)
         args = _make_args(dataset_dir=str(tmp_path), output_dir=str(tmp_path / "out"))
         _mod.run_evaluation(args)

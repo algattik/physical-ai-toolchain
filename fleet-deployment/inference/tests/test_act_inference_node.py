@@ -240,8 +240,8 @@ class _PolicyRunner:
         )
 
     @classmethod
-    def from_pretrained(cls, repo: str, device: str = "cuda") -> _PolicyRunner:
-        cls.last_init_kwargs = {"repo": repo, "device": device}
+    def from_pretrained(cls, repo: str, device: str = "cuda", revision: str | None = None) -> _PolicyRunner:
+        cls.last_init_kwargs = {"repo": repo, "device": device, "revision": revision}
         return cls(device=device)
 
 

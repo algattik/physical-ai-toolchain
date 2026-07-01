@@ -33,6 +33,7 @@ workflow:
         OUTPUT_ROOT: "/outputs"
         DATA_CONFIG: "{{data_config}}"
         BASE_MODEL: "{{base_model}}"
+        BASE_MODEL_REVISION: "{{base_model_revision}}"
         BATCH_SIZE: "{{batch_size}}"
         MAX_STEPS: "{{max_steps}}"
         SAVE_STEPS: "{{save_steps}}"
@@ -445,6 +446,20 @@ workflow:
 
             python -c "import torch; p=torch.cuda.get_device_properties(0); print(f'[preflight] GPU: {p.name}  total={p.total_memory/1024**3:.2f} GiB  sm={p.major}.{p.minor}')"
 
+            # Pin the base model to an immutable commit before the (external) finetune
+            # script resolves it: nvcr/HF tags are mutable, so an upstream repo could
+            # otherwise ship new weights silently. When BASE_MODEL is a HuggingFace repo
+            # id (not an on-disk path) and a revision is set, snapshot it locally at that
+            # SHA and point BASE_MODEL at the snapshot.
+            if [ -n "${BASE_MODEL_REVISION:-}" ] && [ ! -d "${BASE_MODEL}" ]; then
+              echo "--- pinning base model ${BASE_MODEL} @ ${BASE_MODEL_REVISION} ---"
+              BASE_MODEL_LOCAL="/tmp/base_model"
+              python -c "import sys; from huggingface_hub import snapshot_download; snapshot_download(repo_id=sys.argv[1], revision=sys.argv[2], local_dir=sys.argv[3]); print('[base-model] pinned', sys.argv[1], sys.argv[2], '->', sys.argv[3])" "${BASE_MODEL}" "${BASE_MODEL_REVISION}" "${BASE_MODEL_LOCAL}"
+              BASE_MODEL="${BASE_MODEL_LOCAL}"
+            elif [ -z "${BASE_MODEL_REVISION:-}" ] && [ ! -d "${BASE_MODEL}" ]; then
+              echo "WARNING: BASE_MODEL ${BASE_MODEL} is unpinned (no --base-model-revision); using mutable HEAD" >&2
+            fi
+
             echo "--- starting training ---"
             if [ -f "scripts/gr00t_finetune.py" ]; then
               echo "  N1.5/N1.6 branch: using scripts/gr00t_finetune.py"
@@ -568,6 +583,7 @@ default-values:
   data_config_b64: ""
   modality_config_b64: ""
   base_model: ""
+  base_model_revision: ""
   batch_size: 4
   max_steps: 500
   save_steps: 100

@@ -127,6 +127,7 @@ class TestLoadVideoFrame:
 def _make_args(**overrides) -> object:
     defaults = dict(
         policy_repo="repo",
+        policy_revision=None,
         dataset_dir="/tmp/ds",
         episode=0,
         start_frame=0,

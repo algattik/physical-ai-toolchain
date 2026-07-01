@@ -23,6 +23,7 @@ columns on load (``load_episodes``) and reads normalization stats from
 
 from __future__ import annotations
 
+import importlib.util
 import json
 import shutil
 import tempfile
@@ -35,6 +36,22 @@ import pyarrow.parquet as pq
 import pytest
 
 from tests.e2e._common import e2e_name, env_value, format_command_failure, log_e2e, run_command
+
+_REPO_ROOT = Path(__file__).resolve().parents[2]
+
+
+def _load_download_dataset_module():
+    """Load the training-runtime download_dataset module (not an importable package).
+
+    Reuses its ``write_checksum_manifest`` so the staged dataset carries the same
+    ``meta/checksums.sha256`` the training pod verifies after download (G6).
+    """
+    spec = importlib.util.spec_from_file_location(
+        "_e2e_download_dataset", _REPO_ROOT / "training" / "il" / "scripts" / "lerobot" / "download_dataset.py"
+    )
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
 
 # --- Embodiment spec (single source of truth) -------------------------------
 # A self-contained ACT-compatible embodiment: one RGB camera ``observation.image``
@@ -466,6 +483,9 @@ def stage_synthetic_lerobot_dataset(
     log_e2e("Generating synthetic LeRobot v3.0 dataset")
     build_synthetic_dataset(dataset_dir)
     validate_synthetic_dataset(dataset_dir)
+
+    log_e2e("Writing SHA256 checksum manifest (meta/checksums.sha256)")
+    _load_download_dataset_module().write_checksum_manifest(dataset_dir)
 
     prefix = f"e2e-il-datasets/{e2e_name('lerobot')}"
     log_e2e(f"Uploading synthetic LeRobot dataset to {storage_account}/{container}/{prefix}")

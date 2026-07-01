@@ -166,7 +166,7 @@ class TestPolicyRunnerFromPretrained:
         runner = PolicyRunner.from_pretrained("test/repo", device="cuda")
 
         assert runner.device == "cpu"
-        mock_act.ACTPolicy.from_pretrained.assert_called_once_with("test/repo")
+        mock_act.ACTPolicy.from_pretrained.assert_called_once_with("test/repo", revision=None)
         mock_act.ACTPolicy.from_pretrained.return_value.to.assert_called_once_with("cpu")
         assert mock_pipeline.PolicyProcessorPipeline.from_pretrained.call_count == 2
 

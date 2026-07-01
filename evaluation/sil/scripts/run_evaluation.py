@@ -302,6 +302,8 @@ def main() -> int:
     policy_repo_id = os.environ["POLICY_REPO_ID"]
     policy_type = os.environ.get("POLICY_TYPE", "act")
     dataset_repo_id = os.environ.get("DATASET_REPO_ID", "")
+    policy_revision = os.environ.get("POLICY_REVISION") or None
+    dataset_revision = os.environ.get("DATASET_REVISION") or None
     eval_episodes = int(os.environ.get("EVAL_EPISODES", "10"))
     output_dir = Path(os.environ.get("OUTPUT_DIR", "/workspace/outputs/eval"))
     job_name = os.environ.get("JOB_NAME", "lerobot-eval")
@@ -320,7 +322,7 @@ def main() -> int:
     elif dataset_repo_id and dataset_repo_id != "none":
         from huggingface_hub import snapshot_download
 
-        dataset_dir = snapshot_download(repo_id=dataset_repo_id, repo_type="dataset")
+        dataset_dir = snapshot_download(repo_id=dataset_repo_id, repo_type="dataset", revision=dataset_revision)
         print(f"[INFO] Dataset downloaded from HuggingFace: {dataset_dir}")
     else:
         print("[ERROR] Dataset source required: set DATASET_REPO_ID or blob storage params")
@@ -343,7 +345,7 @@ def main() -> int:
 
     # Load policy (normalization is handled internally by select_action)
     print(f"[INFO] Loading policy from: {policy_repo_id}")
-    policy = ACTPolicy.from_pretrained(policy_repo_id)
+    policy = ACTPolicy.from_pretrained(policy_repo_id, revision=policy_revision)
     policy.to(device)
 
     # Determine episode range

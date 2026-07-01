@@ -33,6 +33,7 @@ Evaluates trained policies from HuggingFace Hub or Azure ML model registry.
 
 POLICY SOURCE (one required):
         --policy-repo-id ID       HuggingFace policy repository (e.g., user/trained-policy)
+        --policy-revision SHA      HuggingFace commit SHA to pin the policy download (recommended)
         --from-aml-model          Load policy from AzureML model registry instead of HuggingFace
         --model-name NAME         AzureML model registry name (e.g., hve-robo-act-model)
         --model-version VERSION   AzureML model version (e.g., 4)
@@ -41,6 +42,7 @@ POLICY SOURCE (one required):
 
 DATASET SOURCE (one required):
     -d, --dataset-repo-id ID     HuggingFace dataset for replay evaluation
+        --dataset-revision SHA    HuggingFace commit SHA to pin the dataset download (recommended)
         --from-blob-dataset       Download dataset from Azure Blob Storage
         --storage-account NAME    Azure storage account (default: from Terraform)
         --storage-container NAME  Blob container name (default: datasets)
@@ -81,8 +83,10 @@ EOF
 
 workflow="$REPO_ROOT/evaluation/sil/workflows/osmo/lerobot-eval.yaml"
 policy_repo_id="${POLICY_REPO_ID:-}"
+policy_revision="${POLICY_REVISION:-}"
 policy_type="${POLICY_TYPE:-act}"
 dataset_repo_id="${DATASET_REPO_ID:-}"
+dataset_revision="${DATASET_REVISION:-}"
 job_name="${JOB_NAME:-lerobot-eval}"
 output_dir="${OUTPUT_DIR:-/workspace/outputs/eval}"
 image="${IMAGE:-pytorch/pytorch:2.4.1-cuda12.4-cudnn9-runtime}"
@@ -124,8 +128,10 @@ while [[ $# -gt 0 ]]; do
     -h|--help)                    show_help; exit 0 ;;
     -w|--workflow)                workflow="$2"; shift 2 ;;
     --policy-repo-id)             policy_repo_id="$2"; shift 2 ;;
+    --policy-revision)            policy_revision="$2"; shift 2 ;;
     -p|--policy-type)             policy_type="$2"; shift 2 ;;
     -d|--dataset-repo-id)         dataset_repo_id="$2"; shift 2 ;;
+    --dataset-revision)           dataset_revision="$2"; shift 2 ;;
     -j|--job-name)                job_name="$2"; shift 2 ;;
     -o|--output-dir)              output_dir="$2"; shift 2 ;;
     -i|--image)                   image="$2"; shift 2 ;;
@@ -264,7 +270,9 @@ submit_args=(
   "record_video=$record_video"
 )
 
+[[ -n "$policy_revision" ]] && submit_args+=("policy_revision=$policy_revision")
 [[ -n "$dataset_repo_id" ]]  && submit_args+=("dataset_repo_id=$dataset_repo_id")
+[[ -n "$dataset_revision" ]] && submit_args+=("dataset_revision=$dataset_revision")
 [[ -n "$lerobot_version" ]]  && submit_args+=("lerobot_version=$lerobot_version")
 [[ "$mlflow_enable" == "true" ]] && submit_args+=("mlflow_enable=true")
 [[ -n "$experiment_name" ]]  && submit_args+=("experiment_name=$experiment_name")

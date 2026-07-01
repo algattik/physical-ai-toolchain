@@ -6,6 +6,7 @@ features, and video timestamp realignment.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import shlex
@@ -16,9 +17,89 @@ import tempfile
 from pathlib import Path
 
 _DOWNLOAD_MAX_CONCURRENCY = 4
+_CHECKSUM_MANIFEST = "meta/checksums.sha256"
+_HASH_CHUNK_BYTES = 1024 * 1024
 
 EXIT_SUCCESS = 0
 EXIT_FAILURE = 1
+
+
+def _sha256_file(path: Path) -> str:
+    """Return the hex SHA256 of a file, streamed in chunks."""
+    digest = hashlib.sha256()
+    with open(path, "rb") as f:
+        for chunk in iter(lambda: f.read(_HASH_CHUNK_BYTES), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def write_checksum_manifest(dataset_dir: Path) -> Path:
+    """Write a per-file SHA256 manifest to ``meta/checksums.sha256``.
+
+    Called at upload time so a poisoned or substituted blob is detectable at
+    download. The manifest is ``sha256sum``-format (``<hex>  <relpath>``), sorted
+    by POSIX-relative path, and excludes itself. Verified by
+    :func:`verify_checksums` after download.
+
+    Returns:
+        Path to the written manifest.
+    """
+    dataset_dir = Path(dataset_dir)
+    manifest_path = dataset_dir / _CHECKSUM_MANIFEST
+    manifest_path.parent.mkdir(parents=True, exist_ok=True)
+
+    entries = []
+    for path in sorted(dataset_dir.rglob("*")):
+        if not path.is_file():
+            continue
+        rel = path.relative_to(dataset_dir).as_posix()
+        if rel == _CHECKSUM_MANIFEST:
+            continue
+        entries.append(f"{_sha256_file(path)}  {rel}\n")
+
+    manifest_path.write_text("".join(entries), encoding="utf-8")
+    return manifest_path
+
+
+def verify_checksums(dataset_dir: Path) -> None:
+    """Verify downloaded files against ``meta/checksums.sha256``; fail closed.
+
+    Azure transport ``validate_content`` is CRC32 only — it detects corruption,
+    not malicious substitution. This verifies content SHA256 against the manifest
+    staged with the dataset at upload time. A missing manifest is a warning
+    (legacy datasets predate it); any mismatch or missing listed file raises.
+
+    Raises:
+        RuntimeError: If a listed file is missing or its digest does not match.
+    """
+    dataset_dir = Path(dataset_dir)
+    manifest_path = dataset_dir / _CHECKSUM_MANIFEST
+    if not manifest_path.exists():
+        print(f"Warning: {_CHECKSUM_MANIFEST} not found; skipping content verification (legacy dataset)")
+        return
+
+    mismatches = []
+    verified = 0
+    for line in manifest_path.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        expected, _, rel = line.partition("  ")
+        rel = rel.strip()
+        target = dataset_dir / rel
+        if not target.is_file():
+            mismatches.append(f"missing: {rel}")
+            continue
+        actual = _sha256_file(target)
+        if actual != expected.strip().lower():
+            mismatches.append(f"mismatch: {rel} (expected {expected}, got {actual})")
+            continue
+        verified += 1
+
+    if mismatches:
+        raise RuntimeError(f"Dataset checksum verification failed for {dataset_dir}:\n  " + "\n  ".join(mismatches))
+
+    print(f"Verified {verified} files against {_CHECKSUM_MANIFEST}")
 
 
 def parse_blob_url(url: str) -> tuple[str, str, str]:
@@ -131,6 +212,7 @@ def download_dataset(
         downloaded += 1
 
     print(f"Downloaded {downloaded} files to {dest_dir}")
+    verify_checksums(dest_dir)
     return dest_dir
 
 

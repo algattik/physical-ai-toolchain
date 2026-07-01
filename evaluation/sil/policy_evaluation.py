@@ -185,8 +185,14 @@ def _load_skrl(
 
 
 def _load_rsl_rl(checkpoint_path: str, device: str) -> Any:
-    """Load RSL-RL agent from checkpoint."""
-    checkpoint = torch.load(checkpoint_path, map_location=device, weights_only=False)
+    """Load RSL-RL agent from checkpoint.
+
+    Loads with ``weights_only=True`` so a checkpoint fetched from blob storage,
+    MLflow, or the AzureML registry cannot execute arbitrary code via pickle.
+    The RSL-RL checkpoint holds only tensors (``model_state_dict``) and a
+    primitive ``model_cfg`` mapping, both of which the safe unpickler allows.
+    """
+    checkpoint = torch.load(checkpoint_path, map_location=device, weights_only=True)
     from rsl_rl.modules import ActorCritic
 
     policy = ActorCritic(**checkpoint.get("model_cfg", {}))

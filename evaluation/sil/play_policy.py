@@ -10,6 +10,7 @@ Supports both ONNX and TorchScript (JIT) model formats.
 """Launch Isaac Sim Simulator first."""
 
 import argparse
+import hashlib
 import sys
 from pathlib import Path
 
@@ -199,6 +200,36 @@ class RslRl3xCompatWrapper:
         return self._ensure_tensordict(result), {}
 
 
+def _verify_jit_integrity(jit_path: str) -> None:
+    """Verify a TorchScript file against its sidecar SHA256 before loading.
+
+    ``torch.jit.load`` deserializes embedded operators, so a substituted model
+    is a code-execution vector. ``export_policy.py`` writes ``<path>.sha256``
+    (``sha256sum`` format) next to every exported ``policy.pt``; the load is
+    rejected on mismatch. A missing sidecar is a hard failure for integrity-gated
+    inputs — pass a sidecar produced by the export pipeline.
+
+    Raises:
+        FileNotFoundError: If the sidecar manifest is absent.
+        ValueError: If the file digest does not match the manifest.
+    """
+    manifest = Path(f"{jit_path}.sha256")
+    if not manifest.exists():
+        raise FileNotFoundError(
+            f"Missing integrity manifest {manifest}; TorchScript models must ship a SHA256 sidecar from export"
+        )
+    expected = manifest.read_text(encoding="utf-8").split()[0].strip().lower()
+
+    digest = hashlib.sha256()
+    with open(jit_path, "rb") as f:
+        for chunk in iter(lambda: f.read(1024 * 1024), b""):
+            digest.update(chunk)
+    actual = digest.hexdigest()
+
+    if actual != expected:
+        raise ValueError(f"SHA256 mismatch for {jit_path}: expected {expected}, got {actual}")
+
+
 class JitPolicy:
     """Wrapper for JIT (TorchScript) policy inference compatible with Isaac Lab environments."""
 
@@ -212,6 +243,7 @@ class JitPolicy:
         self.device = device
 
         print(f"[INFO] Loading JIT model from: {jit_path}")
+        _verify_jit_integrity(jit_path)
         self.model = torch.jit.load(jit_path, map_location=device)
         self.model.eval()
         print(f"[INFO] JIT model loaded on device: {device}")
