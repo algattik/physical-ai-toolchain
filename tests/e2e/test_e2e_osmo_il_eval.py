@@ -23,6 +23,7 @@ from tests.e2e._common import log_e2e
 from tests.e2e._lerobot_dataset import stage_synthetic_lerobot_dataset
 from tests.e2e._mlflow import assert_osmo_lerobot_eval_has_mlflow_tracking
 from tests.e2e._osmo import (
+    _lerobot_eval_model_source_args,
     assert_workflow_task_succeeded,
     cancel_osmo_workflow,
     start_task_pod_log_stream,
@@ -32,6 +33,26 @@ from tests.e2e._osmo import (
 )
 
 _LEROBOT_EVAL_TASK_NAME = "lerobot-eval"
+
+
+def test_lerobot_eval_policy_repo_forwards_revision(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("E2E_LEROBOT_EVAL_POLICY_REPO_ID", "org/policy")
+    monkeypatch.setenv("E2E_LEROBOT_EVAL_POLICY_REVISION", "abc123")
+    monkeypatch.delenv("E2E_LEROBOT_EVAL_MODEL", raising=False)
+
+    args, description = _lerobot_eval_model_source_args()
+
+    assert args == ["--policy-repo-id", "org/policy", "--policy-revision", "abc123"]
+    assert description == "HuggingFace policy repo org/policy@abc123"
+
+
+def test_lerobot_eval_policy_repo_requires_revision(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("E2E_LEROBOT_EVAL_POLICY_REPO_ID", "org/policy")
+    monkeypatch.delenv("E2E_LEROBOT_EVAL_POLICY_REVISION", raising=False)
+    monkeypatch.delenv("E2E_LEROBOT_EVAL_MODEL", raising=False)
+
+    with pytest.raises(pytest.skip.Exception):
+        _lerobot_eval_model_source_args()
 
 
 @pytest.mark.e2e

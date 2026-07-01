@@ -541,12 +541,23 @@ def submit_osmo_lerobot_training(
 
 _LEROBOT_EVAL_MODEL_ENV = "E2E_LEROBOT_EVAL_MODEL"
 _LEROBOT_EVAL_POLICY_REPO_ENV = "E2E_LEROBOT_EVAL_POLICY_REPO_ID"
+_LEROBOT_EVAL_POLICY_REVISION_ENV = "E2E_LEROBOT_EVAL_POLICY_REVISION"
 
 
 def _lerobot_eval_model_source_args() -> tuple[list[str], str]:
     policy_repo_id = env_value(_LEROBOT_EVAL_POLICY_REPO_ENV)
     if policy_repo_id:
-        return ["--policy-repo-id", policy_repo_id], f"HuggingFace policy repo {policy_repo_id}"
+        policy_revision = env_value(_LEROBOT_EVAL_POLICY_REVISION_ENV)
+        if not policy_revision:
+            pytest.skip(
+                f"{_LEROBOT_EVAL_POLICY_REVISION_ENV} is required when {_LEROBOT_EVAL_POLICY_REPO_ENV} is set"
+            )
+        return [
+            "--policy-repo-id",
+            policy_repo_id,
+            "--policy-revision",
+            policy_revision,
+        ], f"HuggingFace policy repo {policy_repo_id}@{policy_revision}"
 
     model = env_value(_LEROBOT_EVAL_MODEL_ENV)
     if not model:
@@ -638,6 +649,7 @@ def submit_osmo_lerobot_eval(
 _VLA_DATASET_BLOB_URL_ENV = "E2E_VLA_DATASET_BLOB_URL"
 _VLA_VERSION_ENV = "E2E_VLA_VERSION"
 _VLA_BASE_MODEL_ENV = "E2E_VLA_BASE_MODEL"
+_VLA_BASE_MODEL_REVISION_ENV = "E2E_VLA_BASE_MODEL_REVISION"
 _VLA_DATA_CONFIG_ENV = "E2E_VLA_DATA_CONFIG"
 _VLA_EMBODIMENT_TAG_ENV = "E2E_VLA_EMBODIMENT_TAG"
 _VLA_PLATFORM_ENV = "E2E_VLA_PLATFORM"
@@ -716,6 +728,22 @@ def _resolve_vla_dataset(request: pytest.FixtureRequest, repo_root: Path) -> _Vl
     return _stage_synthetic_vla_dataset(request, repo_root)
 
 
+def _vla_base_model_args() -> list[str]:
+    base_model = env_value(_VLA_BASE_MODEL_ENV)
+    base_model_revision = env_value(_VLA_BASE_MODEL_REVISION_ENV)
+    args = []
+    if base_model is not None:
+        args.extend(["--base-model", base_model])
+        if base_model_revision is None and not Path(base_model).is_absolute():
+            pytest.skip(
+                f"{_VLA_BASE_MODEL_REVISION_ENV} is required when {_VLA_BASE_MODEL_ENV} points at a remote "
+                "HuggingFace model"
+            )
+    if base_model_revision is not None:
+        args.extend(["--base-model-revision", base_model_revision])
+    return args
+
+
 def submit_osmo_vla_finetune(
     repo_root: Path,
     aml_workspace: AzureMLWorkspace,
@@ -727,9 +755,7 @@ def submit_osmo_vla_finetune(
     dataloader_workers: int,
 ) -> OSMOWorkflow:
     dataset = _resolve_vla_dataset(request, repo_root)
-
     vla_version = env_value(_VLA_VERSION_ENV, _DEFAULT_VLA_VERSION)
-    base_model = env_value(_VLA_BASE_MODEL_ENV)
     embodiment_tag = env_value(_VLA_EMBODIMENT_TAG_ENV, _DEFAULT_VLA_EMBODIMENT_TAG)
     platform = env_value(_VLA_PLATFORM_ENV, _DEFAULT_VLA_PLATFORM)
     job_name = e2e_name("vla-finetune-e2e-osmo")
@@ -767,8 +793,7 @@ def submit_osmo_vla_finetune(
         "--azure-workspace-name",
         aml_workspace.workspace_name,
     ]
-    if base_model is not None:
-        args.extend(["--base-model", base_model])
+    args.extend(_vla_base_model_args())
     if dataset.data_config_file is not None:
         args.extend(["--data-config-file", str(dataset.data_config_file)])
     args.extend(["--", "--format-type", "json"])

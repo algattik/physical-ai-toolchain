@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import ast
 import re
+import shlex
 import sys
 import textwrap
 from collections.abc import Iterator
@@ -46,10 +47,6 @@ _EXCLUDED_PARTS = frozenset({"tests", "external", "node_modules", ".venv", ".git
 # the delimiter (a redirect ``> log`` or pipe ``| tee``) is allowed so those forms are
 # not silently skipped.
 _HEREDOC_RE = re.compile(r"\bpython3?\s+(?:[^<\n]*\s)?<<-?\s*['\"]?(\w+)['\"]?(?:\s|$)")
-
-# ``python -c "<code>"`` / ``python3 -c '<code>'`` one-liner in workflow YAML. The
-# shell-quoted payload is captured so its AST can be scanned like any other source.
-_INLINE_C_RE = re.compile(r"\bpython3?\s+(?:-\S+\s+)*-c\s+(['\"])(?P<code>.*?)\1", re.DOTALL)
 
 
 class ScanError(RuntimeError):
@@ -137,9 +134,27 @@ def _python_inline_c(text: str) -> Iterator[tuple[int, str]]:
     heredocs; the quoted payload is extracted so its AST can be scanned. Line
     numbers are 1-based against the YAML file.
     """
-    for match in _INLINE_C_RE.finditer(text):
-        lineno = text.count("\n", 0, match.start()) + 1
-        yield lineno, match.group("code")
+    for lineno, line in enumerate(text.splitlines(), start=1):
+        if "python" not in line or "-c" not in line:
+            continue
+        try:
+            argv = shlex.split(line.strip())
+        except ValueError as error:
+            if any(fn in line for fn in _GUARDED_FUNCTIONS):
+                raise ScanError(f"unable to parse python -c shell at line {lineno}") from error
+            continue
+
+        for index, token in enumerate(argv):
+            if Path(token).name not in {"python", "python3"}:
+                continue
+            try:
+                command_index = argv.index("-c", index + 1)
+            except ValueError:
+                break
+            if command_index + 1 >= len(argv):
+                raise ScanError(f"python -c missing payload at line {lineno}")
+            yield lineno, argv[command_index + 1]
+            break
 
 
 def _violations_in_inline(code: str, filename: str) -> list[tuple[int, int, str]]:
