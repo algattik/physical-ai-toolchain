@@ -304,7 +304,6 @@ def main() -> int:
     dataset_repo_id = os.environ.get("DATASET_REPO_ID", "")
     policy_revision = os.environ.get("POLICY_REVISION") or None
     dataset_revision = os.environ.get("DATASET_REVISION") or None
-    require_hf_pins = os.environ.get("REQUIRE_HF_PINS", "").lower() in ("1", "true", "yes")
     eval_episodes = int(os.environ.get("EVAL_EPISODES", "10"))
     output_dir = Path(os.environ.get("OUTPUT_DIR", "/workspace/outputs/eval"))
     job_name = os.environ.get("JOB_NAME", "lerobot-eval")
@@ -321,11 +320,11 @@ def main() -> int:
         dataset_dir = dataset_dir_env
         print(f"[INFO] Using blob-downloaded dataset: {dataset_dir}")
     elif dataset_repo_id and dataset_repo_id != "none":
+        if not dataset_revision:
+            print("[ERROR] DATASET_REVISION is required for remote HuggingFace dataset downloads")
+            return 1
         from huggingface_hub import snapshot_download
 
-        if require_hf_pins and not dataset_revision:
-            print("[ERROR] REQUIRE_HF_PINS is set but DATASET_REVISION is unpinned for a HuggingFace dataset download")
-            return 1
         dataset_dir = snapshot_download(repo_id=dataset_repo_id, repo_type="dataset", revision=dataset_revision)
         print(f"[INFO] Dataset downloaded from HuggingFace: {dataset_dir}")
     else:
@@ -349,8 +348,8 @@ def main() -> int:
 
     # Load policy (normalization is handled internally by select_action)
     print(f"[INFO] Loading policy from: {policy_repo_id}")
-    if require_hf_pins and not policy_revision and not os.path.isdir(policy_repo_id):
-        print("[ERROR] REQUIRE_HF_PINS is set but POLICY_REVISION is unpinned for a remote HuggingFace policy repo")
+    if not policy_revision and not Path(policy_repo_id).expanduser().exists():
+        print("[ERROR] POLICY_REVISION is required for remote HuggingFace policy repos")
         return 1
     policy = ACTPolicy.from_pretrained(policy_repo_id, revision=policy_revision)
     policy.to(device)

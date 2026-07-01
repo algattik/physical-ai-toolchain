@@ -15,12 +15,14 @@ import pytest
 
 from tests.e2e._aml import AzureMLWorkspace
 from tests.e2e._common import (
+    delete_blob_prefix,
     e2e_name,
     env_value,
     format_command_failure,
     log_e2e,
     parse_json_from_output,
     run_command,
+    upload_blob_directory,
     wait_for_status,
 )
 
@@ -657,57 +659,6 @@ class _VlaDataset:
     data_config_file: Path | None
 
 
-def _upload_vla_dataset(repo_root: Path, storage_account: str, container: str, prefix: str, dataset_dir: Path) -> None:
-    result = run_command(
-        [
-            "az",
-            "storage",
-            "blob",
-            "upload-batch",
-            "--account-name",
-            storage_account,
-            "--auth-mode",
-            "login",
-            "--destination",
-            container,
-            "--destination-path",
-            prefix,
-            "--source",
-            str(dataset_dir),
-            "--overwrite",
-            "--only-show-errors",
-        ],
-        cwd=repo_root,
-    )
-    if result.returncode != 0:
-        raise AssertionError(
-            f"Failed to upload synthetic VLA dataset to {storage_account}/{container}/{prefix}\n\n"
-            f"{format_command_failure(result)}"
-        )
-
-
-def _delete_vla_dataset(repo_root: Path, storage_account: str, container: str, prefix: str) -> None:
-    log_e2e(f"Deleting staged synthetic VLA dataset under {container}/{prefix}")
-    run_command(
-        [
-            "az",
-            "storage",
-            "blob",
-            "delete-batch",
-            "--account-name",
-            storage_account,
-            "--auth-mode",
-            "login",
-            "--source",
-            container,
-            "--pattern",
-            f"{prefix}/*",
-            "--only-show-errors",
-        ],
-        cwd=repo_root,
-    )
-
-
 def _stage_synthetic_vla_dataset(request: pytest.FixtureRequest, repo_root: Path) -> _VlaDataset:
     # Imported lazily so the numpy/pyarrow/imageio generator stack only loads when
     # the e2e test actually runs (not during default collection of this module).
@@ -732,8 +683,23 @@ def _stage_synthetic_vla_dataset(request: pytest.FixtureRequest, repo_root: Path
 
     prefix = f"e2e-vla-datasets/{e2e_name('vla-finetune')}"
     log_e2e(f"Uploading synthetic GR00T dataset to {storage_account}/{container}/{prefix}")
-    _upload_vla_dataset(repo_root, storage_account, container, prefix, dataset_dir)
-    request.addfinalizer(lambda: _delete_vla_dataset(repo_root, storage_account, container, prefix))
+    upload_blob_directory(
+        repo_root,
+        storage_account,
+        container,
+        prefix,
+        dataset_dir,
+        description="synthetic VLA dataset",
+    )
+    request.addfinalizer(
+        lambda: delete_blob_prefix(
+            repo_root,
+            storage_account,
+            container,
+            prefix,
+            description="staged synthetic VLA dataset",
+        )
+    )
 
     blob_url = f"https://{storage_account}.blob.core.windows.net/{container}/{prefix}"
     return _VlaDataset(blob_url=blob_url, data_config=DATA_CONFIG_KEY, data_config_file=data_config_file)

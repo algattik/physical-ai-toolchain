@@ -33,7 +33,7 @@ Evaluates trained policies from HuggingFace Hub or Azure ML model registry.
 
 POLICY SOURCE (one required):
         --policy-repo-id ID       HuggingFace policy repository (e.g., user/trained-policy)
-        --policy-revision SHA      HuggingFace commit SHA to pin the policy download (recommended)
+        --policy-revision SHA      HuggingFace commit SHA to pin the policy download (required for Hub)
         --from-aml-model          Load policy from AzureML model registry instead of HuggingFace
         --model-name NAME         AzureML model registry name (e.g., hve-robo-act-model)
         --model-version VERSION   AzureML model version (e.g., 4)
@@ -42,7 +42,7 @@ POLICY SOURCE (one required):
 
 DATASET SOURCE (one required):
     -d, --dataset-repo-id ID     HuggingFace dataset for replay evaluation
-        --dataset-revision SHA    HuggingFace commit SHA to pin the dataset download (recommended)
+        --dataset-revision SHA    HuggingFace commit SHA to pin the dataset download (required for Hub)
         --from-blob-dataset       Download dataset from Azure Blob Storage
         --storage-account NAME    Azure storage account (default: from Terraform)
         --storage-container NAME  Blob container name (default: datasets)
@@ -184,6 +184,7 @@ elif [[ "$policy_repo_id" == *:* ]]; then
   info "Auto-detected AzureML model: ${model_name} version ${model_version}"
 else
   [[ -z "$policy_repo_id" ]] && fatal "A policy source is required: use --builtin-policy, --policy-repo-id, or --from-aml-model"
+  [[ -z "$policy_revision" ]] && fatal "--policy-revision is required with --policy-repo-id"
 fi
 
 # The built-in mint trains a single step from a local dataset, so it requires the blob dataset source.
@@ -198,6 +199,7 @@ if [[ "$from_blob_dataset" == "true" ]]; then
   [[ -z "$storage_account" ]] && fatal "--storage-account is required with --from-blob-dataset"
 else
   [[ -z "$dataset_repo_id" ]] && fatal "--dataset-repo-id is required (or use --from-blob-dataset)"
+  [[ -z "$dataset_revision" ]] && fatal "--dataset-revision is required with --dataset-repo-id"
 fi
 
 [[ -f "$workflow" ]] || fatal "Workflow template not found: $workflow"

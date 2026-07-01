@@ -389,6 +389,12 @@ workflow:
             # Resolved dynamically from dataset info.json after dataset is loaded
             JOINT_NAMES = None
 
+            def require_hf_revision(name, revision):
+                if revision:
+                    return revision
+                print(f"[ERROR] {name} is required for remote HuggingFace downloads", file=sys.stderr)
+                sys.exit(1)
+
             # ----------------------------------------------------------------
             # Plotting (inline copy of evaluation/metrics/plotting.py functions)
             # ----------------------------------------------------------------
@@ -621,6 +627,7 @@ workflow:
                     dataset_dir = dataset_dir_env
                     print(f"[INFO] Using blob-downloaded dataset: {dataset_dir}")
                 elif dataset_repo_id:
+                    dataset_revision = require_hf_revision("DATASET_REVISION", dataset_revision)
                     from huggingface_hub import snapshot_download
                     dataset_dir = snapshot_download(repo_id=dataset_repo_id, repo_type="dataset", revision=dataset_revision)
                     print(f"[INFO] Dataset downloaded from HuggingFace: {dataset_dir}")
@@ -655,6 +662,8 @@ workflow:
 
                 # Load policy (LeRobot 0.3.x — normalize/unnormalize handled internally)
                 print(f"[INFO] Loading policy from: {policy_repo_id}")
+                if not Path(policy_repo_id).expanduser().exists():
+                    policy_revision = require_hf_revision("POLICY_REVISION", policy_revision)
                 policy = ACTPolicy.from_pretrained(policy_repo_id, revision=policy_revision)
                 policy.to(device)
 

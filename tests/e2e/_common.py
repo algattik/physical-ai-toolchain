@@ -49,6 +49,72 @@ def format_command_failure(result: subprocess.CompletedProcess[str]) -> str:
     return "\n\n".join(parts)
 
 
+def upload_blob_directory(
+    repo_root: Path,
+    storage_account: str,
+    container: str,
+    prefix: str,
+    source_dir: Path,
+    *,
+    description: str,
+) -> None:
+    result = run_command(
+        [
+            "az",
+            "storage",
+            "blob",
+            "upload-batch",
+            "--account-name",
+            storage_account,
+            "--auth-mode",
+            "login",
+            "--destination",
+            container,
+            "--destination-path",
+            prefix,
+            "--source",
+            str(source_dir),
+            "--overwrite",
+            "--only-show-errors",
+        ],
+        cwd=repo_root,
+    )
+    if result.returncode != 0:
+        raise AssertionError(
+            f"Failed to upload {description} to {storage_account}/{container}/{prefix}\n\n"
+            f"{format_command_failure(result)}"
+        )
+
+
+def delete_blob_prefix(
+    repo_root: Path,
+    storage_account: str,
+    container: str,
+    prefix: str,
+    *,
+    description: str,
+) -> None:
+    log_e2e(f"Deleting {description} under {container}/{prefix}")
+    run_command(
+        [
+            "az",
+            "storage",
+            "blob",
+            "delete-batch",
+            "--account-name",
+            storage_account,
+            "--auth-mode",
+            "login",
+            "--source",
+            container,
+            "--pattern",
+            f"{prefix}/*",
+            "--only-show-errors",
+        ],
+        cwd=repo_root,
+    )
+
+
 def parse_json_from_output(output: str) -> Any:
     decoder = json.JSONDecoder()
     stripped = output.strip()
