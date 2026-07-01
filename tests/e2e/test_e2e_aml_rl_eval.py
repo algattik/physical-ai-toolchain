@@ -20,6 +20,7 @@ import pytest
 from tests.e2e._aml import (
     AzureMLWorkspace,
     cancel_aml_job,
+    resolve_isaac_eval_model,
     submit_aml_isaaclab_eval,
     wait_until_aml_completed,
     wait_until_aml_started,
@@ -35,9 +36,11 @@ def test_aml_rl_eval_e2e(
     repo_root: Path,
 ) -> None:
     log_e2e("Starting AzureML RL (Isaac Lab) eval e2e test")
+    model = resolve_isaac_eval_model()
     job = submit_aml_isaaclab_eval(
         repo_root,
         aml_workspace,
+        model=model,
         eval_episodes=2,
         num_envs=4,
     )

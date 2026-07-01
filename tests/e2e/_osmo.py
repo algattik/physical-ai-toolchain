@@ -13,7 +13,7 @@ from typing import Any
 
 import pytest
 
-from tests.e2e._aml import AzureMLWorkspace
+from tests.e2e._aml import AmlModelRef, AzureMLWorkspace
 from tests.e2e._common import (
     e2e_name,
     env_value,
@@ -78,9 +78,13 @@ def submit_osmo_training(
     task: str,
     max_iterations: int,
     num_envs: int,
+    register_model_name: str | None = None,
 ) -> OSMOWorkflow:
     experiment_name = f"isaaclab-{task}" if task else "isaaclab-training"
     correlation_id = _e2e_correlation_id()
+    register_args = (
+        ["--register-checkpoint", register_model_name] if register_model_name else ["--skip-register-checkpoint"]
+    )
     log_e2e(
         "Submitting OSMO workflow "
         f"for task={task}, num_envs={num_envs}, max_iterations={max_iterations}, experiment={experiment_name}, "
@@ -103,7 +107,7 @@ def submit_osmo_training(
             "180Gi",
             "--correlation-id",
             correlation_id,
-            "--skip-register-checkpoint",
+            *register_args,
             "--",
             "--format-type",
             "json",
@@ -536,8 +540,10 @@ def submit_osmo_lerobot_training(
     batch_size: int,
     learning_rate: str,
     log_freq: int,
+    register_model_name: str | None = None,
 ) -> OSMOWorkflow:
     experiment_name = e2e_name("il-training-e2e-osmo")
+    register_args = ["--register-checkpoint", register_model_name] if register_model_name else []
     log_e2e(
         "Submitting OSMO LeRobot training workflow "
         f"for dataset={blob_url}, policy={policy_type}, training_steps={training_steps}, "
@@ -572,6 +578,7 @@ def submit_osmo_lerobot_training(
             aml_workspace.resource_group,
             "--azure-workspace-name",
             aml_workspace.workspace_name,
+            *register_args,
             "--",
             "--format-type",
             "json",
@@ -588,17 +595,49 @@ _LEROBOT_EVAL_MODEL_ENV = "E2E_LEROBOT_EVAL_MODEL"
 _LEROBOT_EVAL_POLICY_REPO_ENV = "E2E_LEROBOT_EVAL_POLICY_REPO_ID"
 
 
-def _lerobot_eval_model_source_args() -> tuple[list[str], str]:
+@dataclass(frozen=True)
+class OsmoLeRobotEvalPolicySource:
+    """Resolved policy source for the OSMO LeRobot eval submission."""
+
+    args: tuple[str, ...]
+    description: str
+
+
+def osmo_lerobot_policy_source_from_model(model: AmlModelRef) -> OsmoLeRobotEvalPolicySource:
+    """Build an eval policy source from a concrete registered AzureML model."""
+    return OsmoLeRobotEvalPolicySource(
+        args=("--from-aml-model", "--model-name", model.name, "--model-version", model.version),
+        description=f"AzureML model {model.name}:{model.version}",
+    )
+
+
+def osmo_lerobot_builtin_policy_source() -> OsmoLeRobotEvalPolicySource:
+    """Mint a base policy in-container from LeRobot's built-in ACT architecture.
+
+    Keeps the standalone eval self-contained (no external policy / HuggingFace token).
+    """
+    return OsmoLeRobotEvalPolicySource(
+        args=("--builtin-policy",),
+        description="LeRobot built-in (minted base policy)",
+    )
+
+
+def resolve_osmo_lerobot_eval_policy_override() -> OsmoLeRobotEvalPolicySource | None:
+    """Resolve an eval policy source from the environment, or ``None`` when unset.
+
+    Configure one of ``E2E_LEROBOT_EVAL_POLICY_REPO_ID`` (HuggingFace repo) or
+    ``E2E_LEROBOT_EVAL_MODEL`` (AzureML model ``name:version``). Malformed values skip.
+    """
     policy_repo_id = env_value(_LEROBOT_EVAL_POLICY_REPO_ENV)
     if policy_repo_id:
-        return ["--policy-repo-id", policy_repo_id], f"HuggingFace policy repo {policy_repo_id}"
+        return OsmoLeRobotEvalPolicySource(
+            args=("--policy-repo-id", policy_repo_id),
+            description=f"HuggingFace policy repo {policy_repo_id}",
+        )
 
     model = env_value(_LEROBOT_EVAL_MODEL_ENV)
     if not model:
-        # Default: mint a base policy in-container from LeRobot's built-in ACT
-        # architecture, sized to the synthetic dataset. Keeps the eval self-contained
-        # (no external policy / HuggingFace token). Override via the env vars above.
-        return ["--builtin-policy"], "LeRobot built-in (minted base policy, default)"
+        return None
     if ":" not in model:
         pytest.skip(f"{_LEROBOT_EVAL_MODEL_ENV} must use AzureML model name:version syntax")
 
@@ -606,19 +645,14 @@ def _lerobot_eval_model_source_args() -> tuple[list[str], str]:
     if not model_name or not model_version:
         pytest.skip(f"{_LEROBOT_EVAL_MODEL_ENV} must include a non-empty AzureML model name and version")
 
-    return [
-        "--from-aml-model",
-        "--model-name",
-        model_name,
-        "--model-version",
-        model_version,
-    ], f"AzureML model {model_name}:{model_version}"
+    return osmo_lerobot_policy_source_from_model(AmlModelRef(name=model_name, version=model_version))
 
 
 def submit_osmo_lerobot_eval(
     repo_root: Path,
     aml_workspace: AzureMLWorkspace,
     *,
+    policy_source: OsmoLeRobotEvalPolicySource,
     policy_type: str,
     eval_episodes: int,
     eval_batch_size: int,
@@ -626,7 +660,8 @@ def submit_osmo_lerobot_eval(
     blob_container: str,
     blob_prefix: str,
 ) -> OSMOWorkflow:
-    model_args, model_description = _lerobot_eval_model_source_args()
+    model_args = list(policy_source.args)
+    model_description = policy_source.description
     dataset_args = [
         "--from-blob-dataset",
         "--storage-account",
@@ -683,27 +718,35 @@ def submit_osmo_lerobot_eval(
 _OSMO_ISAAC_EVAL_CHECKPOINT_URI_ENV = "E2E_OSMO_RL_EVAL_CHECKPOINT_URI"
 
 
+def resolve_osmo_isaac_eval_checkpoint_override() -> str | None:
+    """Resolve an eval checkpoint URI from the environment, or ``None`` when unset.
+
+    Set ``E2E_OSMO_RL_EVAL_CHECKPOINT_URI`` to an MLflow (``runs:/<id>/path`` or
+    ``models:/<name>/<version>``), Azure Blob, or HTTP(S) checkpoint URI. Returns
+    ``None`` when unset: the standalone eval test skips, the lifecycle test provisions
+    a freshly trained checkpoint instead.
+    """
+    return env_value(_OSMO_ISAAC_EVAL_CHECKPOINT_URI_ENV) or None
+
+
+def resolve_osmo_isaac_eval_checkpoint() -> str:
+    """Resolve the eval checkpoint URI, skipping the standalone test if none is configured."""
+    checkpoint_uri = resolve_osmo_isaac_eval_checkpoint_override()
+    if not checkpoint_uri:
+        pytest.skip(f"No eval checkpoint configured; set {_OSMO_ISAAC_EVAL_CHECKPOINT_URI_ENV} to a checkpoint URI")
+    return checkpoint_uri
+
+
 def submit_osmo_isaaclab_eval(
     repo_root: Path,
     aml_workspace: AzureMLWorkspace,
     *,
+    checkpoint_uri: str,
     task: str,
     num_envs: int,
     max_steps: int,
 ) -> OSMOWorkflow:
-    """Submit the OSMO Isaac Lab evaluation/inference workflow.
-
-    Requires a trained checkpoint: set ``E2E_OSMO_RL_EVAL_CHECKPOINT_URI`` to an MLflow
-    (``runs:/<id>/path`` or ``models:/<name>/<version>``), Azure Blob, or HTTP(S)
-    checkpoint URI produced by a prior training run. The test skips when unset because
-    there is nothing to evaluate.
-    """
-    checkpoint_uri = env_value(_OSMO_ISAAC_EVAL_CHECKPOINT_URI_ENV)
-    if not checkpoint_uri:
-        pytest.skip(
-            f"No eval checkpoint configured; set {_OSMO_ISAAC_EVAL_CHECKPOINT_URI_ENV} to a checkpoint URI"
-        )
-
+    """Submit the OSMO Isaac Lab evaluation/inference workflow against a checkpoint URI."""
     experiment_name = f"isaaclab-inference-{task}" if task else "isaaclab-inference"
     log_e2e(
         "Submitting OSMO Isaac Lab eval workflow "

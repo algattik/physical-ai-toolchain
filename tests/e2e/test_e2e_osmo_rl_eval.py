@@ -23,6 +23,7 @@ from tests.e2e._common import log_e2e
 from tests.e2e._osmo import (
     assert_workflow_task_succeeded,
     cancel_osmo_workflow,
+    resolve_osmo_isaac_eval_checkpoint,
     start_task_pod_log_stream,
     submit_osmo_isaaclab_eval,
     wait_until_osmo_completed,
@@ -41,9 +42,11 @@ def test_osmo_rl_eval_e2e(
     repo_root: Path,
 ) -> None:
     log_e2e("Starting OSMO RL (Isaac Lab) eval e2e test")
+    checkpoint_uri = resolve_osmo_isaac_eval_checkpoint()
     workflow = submit_osmo_isaaclab_eval(
         repo_root,
         aml_workspace,
+        checkpoint_uri=checkpoint_uri,
         task="Isaac-Ant-v0",
         num_envs=4,
         max_steps=50,

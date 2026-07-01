@@ -25,6 +25,8 @@ from tests.e2e._mlflow import assert_osmo_lerobot_eval_has_mlflow_tracking
 from tests.e2e._osmo import (
     assert_workflow_task_succeeded,
     cancel_osmo_workflow,
+    osmo_lerobot_builtin_policy_source,
+    resolve_osmo_lerobot_eval_policy_override,
     start_task_pod_log_stream,
     submit_osmo_lerobot_eval,
     wait_until_osmo_completed,
@@ -44,10 +46,12 @@ def test_osmo_il_eval_e2e(
     storage_account: str,
 ) -> None:
     log_e2e("Starting OSMO IL (LeRobot) eval e2e test")
+    policy_source = resolve_osmo_lerobot_eval_policy_override() or osmo_lerobot_builtin_policy_source()
     dataset = stage_synthetic_lerobot_dataset(request, repo_root, storage_account)
     workflow = submit_osmo_lerobot_eval(
         repo_root,
         aml_workspace,
+        policy_source=policy_source,
         policy_type="act",
         eval_episodes=1,
         eval_batch_size=1,

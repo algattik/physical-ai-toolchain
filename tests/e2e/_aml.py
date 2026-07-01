@@ -40,6 +40,70 @@ class AzureMLJob:
     terminal_status: str | None = None
 
 
+@dataclass(frozen=True)
+class AmlModelRef:
+    """A concrete registered AzureML model — never the mutable ``latest`` alias."""
+
+    name: str
+    version: str
+
+
+def _model_versions(payload: Any) -> list[int]:
+    items = payload if isinstance(payload, list) else [payload]
+    versions: list[int] = []
+    for item in items:
+        if not isinstance(item, Mapping):
+            continue
+        try:
+            versions.append(int(str(item.get("version"))))
+        except (TypeError, ValueError):
+            continue
+    return versions
+
+
+def resolve_registered_model(
+    aml_workspace: AzureMLWorkspace,
+    repo_root: Path,
+    *,
+    model_name: str,
+) -> AmlModelRef:
+    """Resolve the concrete latest version of a registered AzureML model.
+
+    A lifecycle test registers its checkpoint under a unique model name, so the
+    returned version is the single concrete version that run produced — this avoids
+    the mutable ``latest`` alias entirely.
+    """
+    result = run_command(
+        [
+            "az",
+            "ml",
+            "model",
+            "list",
+            "--name",
+            model_name,
+            "--subscription",
+            aml_workspace.subscription_id,
+            "--resource-group",
+            aml_workspace.resource_group,
+            "--workspace-name",
+            aml_workspace.workspace_name,
+            "-o",
+            "json",
+        ],
+        cwd=repo_root,
+    )
+    if result.returncode != 0:
+        raise AssertionError(
+            f"Failed to list AzureML model versions for {model_name!r}\n\n{format_command_failure(result)}"
+        )
+    versions = _model_versions(parse_json_from_output(result.stdout))
+    if not versions:
+        raise AssertionError(f"Training run registered no versions under AzureML model {model_name!r}")
+    version = str(max(versions))
+    log_e2e(f"Resolved AzureML model {model_name} to concrete version {version}")
+    return AmlModelRef(name=model_name, version=version)
+
+
 def _parse_azureml_job_name(output: str) -> str | None:
     patterns = (
         r"Job submitted:\s*(?P<name>[^\s]+)",
@@ -60,8 +124,12 @@ def submit_aml_training(
     task: str,
     max_iterations: int,
     num_envs: int,
+    register_model_name: str | None = None,
 ) -> AzureMLJob:
     experiment_name = e2e_name("rl-training-e2e-aml")
+    register_args = (
+        ["--register-checkpoint", register_model_name] if register_model_name else ["--skip-register-checkpoint"]
+    )
     log_e2e(
         "Submitting AzureML training job "
         f"for task={task}, num_envs={num_envs}, max_iterations={max_iterations}, experiment={experiment_name}"
@@ -83,7 +151,7 @@ def submit_aml_training(
             aml_workspace.resource_group,
             "--workspace-name",
             aml_workspace.workspace_name,
-            "--skip-register-checkpoint",
+            *register_args,
         ],
         cwd=repo_root,
     )
@@ -103,8 +171,10 @@ def submit_aml_lerobot_training(
     save_freq: int,
     batch_size: int,
     log_freq: int,
+    register_model_name: str | None = None,
 ) -> AzureMLJob:
     experiment_name = e2e_name("il-training-e2e-aml")
+    register_args = ["--register-checkpoint", register_model_name] if register_model_name else []
     log_e2e(
         "Submitting AzureML LeRobot training job "
         f"for dataset={blob_url}, policy={policy_type}, training_steps={training_steps}, "
@@ -137,6 +207,7 @@ def submit_aml_lerobot_training(
             aml_workspace.resource_group,
             "--workspace-name",
             aml_workspace.workspace_name,
+            *register_args,
         ],
         cwd=repo_root,
     )
@@ -160,16 +231,25 @@ class AmlLeRobotEvalPolicySource:
     description: str
 
 
-def resolve_aml_lerobot_eval_policy_source() -> AmlLeRobotEvalPolicySource:
-    """Resolve the eval policy source, skipping the test early if none is configured.
+def aml_lerobot_policy_source_from_model(model: AmlModelRef) -> AmlLeRobotEvalPolicySource:
+    """Build an eval policy source from a concrete registered AzureML model."""
+    return AmlLeRobotEvalPolicySource(
+        args=("--from-aml-model", "--model-name", model.name, "--model-version", model.version),
+        description=f"AzureML model {model.name}:{model.version}",
+    )
 
-    Unlike the OSMO LeRobot eval script, ``submit-azureml-lerobot-eval.sh`` has no
-    ``--builtin-policy`` option, so a real policy must be supplied. Configure one of:
+
+def resolve_aml_lerobot_eval_policy_override() -> AmlLeRobotEvalPolicySource | None:
+    """Resolve an eval policy source from the environment, or ``None`` when unset.
+
+    ``submit-azureml-lerobot-eval.sh`` has no ``--builtin-policy`` option, so a real
+    policy must be supplied. Configure one of:
 
     - ``E2E_AML_LEROBOT_EVAL_POLICY_REPO_ID`` — a HuggingFace policy repo id.
     - ``E2E_AML_LEROBOT_EVAL_MODEL`` — an AzureML model ``name:version``.
 
-    Resolve this before staging any dataset so the skip does not waste that work.
+    Returns ``None`` when neither is set: the standalone eval test skips, while the
+    lifecycle test provisions a freshly trained model instead. Malformed values skip.
     """
     policy_repo_id = env_value(_AML_LEROBOT_EVAL_POLICY_REPO_ENV)
     if policy_repo_id:
@@ -180,11 +260,7 @@ def resolve_aml_lerobot_eval_policy_source() -> AmlLeRobotEvalPolicySource:
 
     model = env_value(_AML_LEROBOT_EVAL_MODEL_ENV)
     if not model:
-        pytest.skip(
-            "No eval policy source configured; set "
-            f"{_AML_LEROBOT_EVAL_POLICY_REPO_ENV} (HuggingFace repo) or "
-            f"{_AML_LEROBOT_EVAL_MODEL_ENV} (AzureML model name:version)"
-        )
+        return None
     if ":" not in model:
         pytest.skip(f"{_AML_LEROBOT_EVAL_MODEL_ENV} must use AzureML model name:version syntax")
 
@@ -192,10 +268,22 @@ def resolve_aml_lerobot_eval_policy_source() -> AmlLeRobotEvalPolicySource:
     if not model_name or not model_version:
         pytest.skip(f"{_AML_LEROBOT_EVAL_MODEL_ENV} must include a non-empty AzureML model name and version")
 
-    return AmlLeRobotEvalPolicySource(
-        args=("--from-aml-model", "--model-name", model_name, "--model-version", model_version),
-        description=f"AzureML model {model_name}:{model_version}",
-    )
+    return aml_lerobot_policy_source_from_model(AmlModelRef(name=model_name, version=model_version))
+
+
+def resolve_aml_lerobot_eval_policy_source() -> AmlLeRobotEvalPolicySource:
+    """Resolve the eval policy source, skipping the standalone test if none is configured.
+
+    Resolve this before staging any dataset so the skip does not waste that work.
+    """
+    source = resolve_aml_lerobot_eval_policy_override()
+    if source is None:
+        pytest.skip(
+            "No eval policy source configured; set "
+            f"{_AML_LEROBOT_EVAL_POLICY_REPO_ENV} (HuggingFace repo) or "
+            f"{_AML_LEROBOT_EVAL_MODEL_ENV} (AzureML model name:version)"
+        )
+    return source
 
 
 def submit_aml_lerobot_eval(
@@ -256,43 +344,54 @@ def submit_aml_lerobot_eval(
     return _aml_job_from_submission(result, aml_workspace, experiment_name, "AzureML LeRobot eval")
 
 
-def submit_aml_isaaclab_eval(
-    repo_root: Path,
-    aml_workspace: AzureMLWorkspace,
-    *,
-    eval_episodes: int,
-    num_envs: int,
-) -> AzureMLJob:
-    """Submit the AzureML Isaac Lab evaluation.
+def resolve_isaac_eval_model_override() -> AmlModelRef | None:
+    """Resolve an AzureML eval model from the environment, or ``None`` when unset.
 
-    Requires a registered policy: set ``E2E_AML_ISAAC_EVAL_MODEL`` to an AzureML model
-    ``name:version`` (or ``name:latest``) produced by a prior training run. The test
-    skips when unset because there is nothing to evaluate.
+    Set ``E2E_AML_ISAAC_EVAL_MODEL`` to an AzureML model ``name:version``. Returns
+    ``None`` when unset: the standalone eval test skips, the lifecycle test provisions
+    a freshly trained model instead. Malformed values skip.
     """
     model = env_value(_AML_ISAAC_EVAL_MODEL_ENV)
     if not model:
-        pytest.skip(
-            f"No eval model configured; set {_AML_ISAAC_EVAL_MODEL_ENV} to an AzureML model name:version"
-        )
+        return None
     if ":" not in model:
         pytest.skip(f"{_AML_ISAAC_EVAL_MODEL_ENV} must use AzureML model name:version syntax")
     model_name, model_version = (part.strip() for part in model.split(":", 1))
     if not model_name or not model_version:
         pytest.skip(f"{_AML_ISAAC_EVAL_MODEL_ENV} must include a non-empty AzureML model name and version")
+    return AmlModelRef(name=model_name, version=model_version)
 
+
+def resolve_isaac_eval_model() -> AmlModelRef:
+    """Resolve the AzureML eval model, skipping the standalone test if none is configured."""
+    model = resolve_isaac_eval_model_override()
+    if model is None:
+        pytest.skip(f"No eval model configured; set {_AML_ISAAC_EVAL_MODEL_ENV} to an AzureML model name:version")
+    return model
+
+
+def submit_aml_isaaclab_eval(
+    repo_root: Path,
+    aml_workspace: AzureMLWorkspace,
+    *,
+    model: AmlModelRef,
+    eval_episodes: int,
+    num_envs: int,
+) -> AzureMLJob:
+    """Submit the AzureML Isaac Lab evaluation against a concrete registered model."""
     experiment_name = e2e_name("rl-eval-e2e-aml")
     log_e2e(
         "Submitting AzureML Isaac Lab eval job "
-        f"for model={model_name}:{model_version}, eval_episodes={eval_episodes}, num_envs={num_envs}, "
+        f"for model={model.name}:{model.version}, eval_episodes={eval_episodes}, num_envs={num_envs}, "
         f"experiment={experiment_name}"
     )
     result = run_command(
         [
             str(repo_root / "evaluation/sil/scripts/submit-azureml-isaaclab-evaluation.sh"),
             "--model-name",
-            model_name,
+            model.name,
             "--model-version",
-            model_version,
+            model.version,
             "--eval-episodes",
             str(eval_episodes),
             "--num-envs",
