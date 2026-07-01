@@ -74,6 +74,14 @@ class TestHasRevision:
 
         assert _MOD.main(["check_hf_pins.py", str(root)]) == 0
 
+    def test_fails_closed_on_syntax_error(self, tmp_path: Path, capsys) -> None:
+        root = tmp_path / "evaluation"
+        root.mkdir()
+        (root / "mod.py").write_text("if True print('broken')\n", encoding="utf-8")
+
+        assert _MOD.main(["check_hf_pins.py", str(root)]) == 1
+        assert "Files could not be scanned" in capsys.readouterr().err
+
 
 class TestYamlHeredocs:
     def test_flags_bare_call_in_workflow_heredoc(self, tmp_path: Path) -> None:

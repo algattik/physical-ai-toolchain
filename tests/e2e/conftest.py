@@ -241,10 +241,10 @@ def aml_workspace(repo_root: Path) -> AzureMLWorkspace:
 def storage_account(repo_root: Path) -> str:
     """Resolves the storage account used to stage e2e datasets, skipping if undeterminable.
 
-    Resolution order: ``E2E_VLA_STORAGE_ACCOUNT`` env var, then the ``storage_account``
-    Terraform output (or its terraform.tfvars fallback).
+    Resolution order: ``E2E_VLA_STORAGE_ACCOUNT`` env var, ``AZURE_STORAGE_ACCOUNT_NAME`` env var,
+    then the ``storage_account`` Terraform output (or its terraform.tfvars fallback).
     """
-    account = os.environ.get("E2E_VLA_STORAGE_ACCOUNT")
+    account = os.environ.get("E2E_VLA_STORAGE_ACCOUNT") or os.environ.get("AZURE_STORAGE_ACCOUNT_NAME")
     if not account:
         account = _terraform_outputs(repo_root).try_key_value("storage_account")
     if not account:

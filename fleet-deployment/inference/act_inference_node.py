@@ -31,6 +31,8 @@ Usage:
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import numpy as np
 import rclpy
 from builtin_interfaces.msg import Duration
@@ -53,6 +55,21 @@ from std_msgs.msg import String
 from trajectory_msgs.msg import JointTrajectory, JointTrajectoryPoint
 
 
+def _resolve_policy_revision(policy_repo: str, policy_revision: object) -> str | None:
+    """Require immutable revisions for remote policy repositories."""
+    revision = str(policy_revision or "").strip()
+    if revision:
+        return revision
+
+    if Path(policy_repo).expanduser().exists():
+        return None
+
+    raise ValueError(
+        "policy_revision is required when policy_repo is a Hugging Face repo ID; "
+        "use a local path for development or pass an immutable commit SHA"
+    )
+
+
 class ACTInferenceNode(Node):
     """ROS2 node that runs a trained LeRobot ACT policy in a control loop."""
 
@@ -69,8 +86,8 @@ class ACTInferenceNode(Node):
         self.declare_parameter("camera_topic", "/camera/color/image_raw")
         self.declare_parameter("joint_states_topic", "/joint_states")
 
-        policy_repo = self.get_parameter("policy_repo").value
-        policy_revision = self.get_parameter("policy_revision").value or None
+        policy_repo = str(self.get_parameter("policy_repo").value)
+        policy_revision = _resolve_policy_revision(policy_repo, self.get_parameter("policy_revision").value)
         device = self.get_parameter("device").value
         self._control_hz = self.get_parameter("control_hz").value
         self._action_mode = self.get_parameter("action_mode").value
@@ -78,7 +95,7 @@ class ACTInferenceNode(Node):
         camera_topic = self.get_parameter("camera_topic").value
         joint_states_topic = self.get_parameter("joint_states_topic").value
 
-        self.get_logger().info(f"Loading policy: {policy_repo} (revision={policy_revision or 'unpinned'})")
+        self.get_logger().info(f"Loading policy: {policy_repo} (revision={policy_revision or 'local path'})")
         self._runner = PolicyRunner.from_pretrained(policy_repo, device=device, revision=policy_revision)
         self.get_logger().info(f"Policy loaded on {self._runner.device}")
 

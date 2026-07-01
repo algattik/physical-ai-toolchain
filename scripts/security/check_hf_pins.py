@@ -43,6 +43,10 @@ _EXCLUDED_PARTS = frozenset({"tests", "external", "node_modules", ".venv", ".git
 _HEREDOC_RE = re.compile(r"\bpython3?\s+<<-?\s*['\"]?(\w+)['\"]?\s*$")
 
 
+class ScanError(RuntimeError):
+    """Raised when a source file cannot be scanned safely."""
+
+
 def _is_excluded(path: Path) -> bool:
     """Skip test suites, vendored trees, and test-named modules."""
     if any(part in _EXCLUDED_PARTS for part in path.parts):
@@ -80,8 +84,9 @@ def _has_revision(node: ast.Call) -> bool:
 def _violations_in_source(source: str, filename: str) -> list[tuple[int, int, str]]:
     try:
         tree = ast.parse(source, filename=filename)
-    except (SyntaxError, UnicodeDecodeError):
-        return []
+    except SyntaxError as error:
+        line = error.lineno or 0
+        raise ScanError(f"unable to parse Python source at line {line}") from error
 
     found = []
     for node in ast.walk(tree):
@@ -119,8 +124,8 @@ def _python_heredocs(text: str) -> Iterator[tuple[int, str]]:
 def _violations_in_file(path: Path) -> list[tuple[int, int, str]]:
     try:
         text = path.read_text(encoding="utf-8")
-    except UnicodeDecodeError:
-        return []
+    except UnicodeDecodeError as error:
+        raise ScanError("unable to decode as UTF-8") from error
 
     if path.suffix in (".yaml", ".yml"):
         found = []
@@ -146,18 +151,29 @@ def main(argv: list[str]) -> int:
     roots = [Path(arg) for arg in argv[1:]] or [repo_root / root for root in _DEFAULT_ROOTS]
 
     violations = []
+    scan_errors = []
     for root in roots:
         if not root.exists():
             continue
         for path in sorted(set(_iter_source_files(root))):
             if _is_excluded(path):
                 continue
-            for lineno, col, name in _violations_in_file(path):
-                rel = path.relative_to(repo_root) if path.is_relative_to(repo_root) else path
+            rel = path.relative_to(repo_root) if path.is_relative_to(repo_root) else path
+            try:
+                file_violations = _violations_in_file(path)
+            except ScanError as error:
+                scan_errors.append(f"{rel}: {error}")
+                continue
+            for lineno, col, name in file_violations:
                 violations.append(f"{rel}:{lineno}:{col}: {name}() call missing an explicit 'revision' argument")
 
-    if violations:
+    if scan_errors or violations:
         print("HuggingFace revision-pin guard failed:\n", file=sys.stderr)
+        if scan_errors:
+            print("  Files could not be scanned:", file=sys.stderr)
+            for error in scan_errors:
+                print(f"    {error}", file=sys.stderr)
+            print(file=sys.stderr)
         for violation in violations:
             print(f"  {violation}", file=sys.stderr)
         print(

@@ -6,12 +6,15 @@ without requiring the full Isaac Lab simulator environment.
 Auto-detects observation and action dimensions from checkpoint weights.
 """
 
+from __future__ import annotations
+
 import argparse
 import copy
 import hashlib
 import os
 import sys
 from dataclasses import dataclass
+from pathlib import Path
 
 import torch
 import torch.nn as nn
@@ -219,14 +222,15 @@ def _write_sha256_sidecar(filepath: str) -> str:
     Returns:
         Path to the written sidecar.
     """
+    path = Path(filepath)
     digest = hashlib.sha256()
-    with open(filepath, "rb") as f:
+    with path.open("rb") as f:
         for chunk in iter(lambda: f.read(1024 * 1024), b""):
             digest.update(chunk)
-    sidecar = f"{filepath}.sha256"
-    with open(sidecar, "w", encoding="utf-8") as f:
-        f.write(f"{digest.hexdigest()}  {os.path.basename(filepath)}\n")
-    return sidecar
+    sidecar = path.with_name(f"{path.name}.sha256")
+    with sidecar.open("w", encoding="utf-8") as f:
+        f.write(f"{digest.hexdigest()}  {path.name}\n")
+    return str(sidecar)
 
 
 def export_policy(
