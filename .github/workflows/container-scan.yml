@@ -45,7 +45,10 @@ jobs:
         id: extract
         run: |
           set -euo pipefail
-          images=$(bash .github/scripts/discover-base-images.sh || true)
+          if ! images="$(bash .github/scripts/discover-base-images.sh)"; then
+            echo "::error::Failed to discover digest-pinned base images"
+            exit 1
+          fi
           echo "Discovered base images:"
           echo "$images"
           count=$(printf '%s' "$images" | grep -c . || true)

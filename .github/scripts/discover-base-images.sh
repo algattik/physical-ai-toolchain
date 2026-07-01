@@ -6,7 +6,26 @@
 # image set from a single source of truth.
 set -o errexit -o nounset -o pipefail
 
-git ls-files -z '*Dockerfile*' \
-  | xargs -0 -r grep -hiE '^FROM[[:space:]]' \
-  | grep -oiE '([a-z0-9.-]+(:[0-9]+)?/)?[a-z0-9._/-]+(:[a-z0-9._-]+)?@sha256:[0-9a-f]{64}' \
-  | sort -u
+dockerfile_list="$(mktemp)"
+trap 'rm -f "$dockerfile_list"' EXIT
+
+git ls-files -z '*Dockerfile*' > "$dockerfile_list"
+
+dockerfiles=()
+while IFS= read -r -d '' file; do
+  dockerfiles+=("$file")
+done < "$dockerfile_list"
+
+if [[ "${#dockerfiles[@]}" -eq 0 ]]; then
+  exit 0
+fi
+
+awk '
+  /^[[:space:]]*[Ff][Rr][Oo][Mm][[:space:]]/ {
+    line = $0
+    while (match(line, /([A-Za-z0-9.-]+(:[0-9]+)?\/)?[A-Za-z0-9._\/-]+(:[A-Za-z0-9._-]+)?@sha256:[0-9A-Fa-f]{64}/)) {
+      print substr(line, RSTART, RLENGTH)
+      line = substr(line, RSTART + RLENGTH)
+    }
+  }
+' "${dockerfiles[@]}" | sort -u
