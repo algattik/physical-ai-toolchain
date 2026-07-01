@@ -7,9 +7,11 @@
 		"TODO"
 	],
 	"words": [
+		"asname",
 		"dedented",
 		"envaccount",
 		"envcontainer",
+		"fixpoint",
 		"getfixturevalue",
 		"hfpins",
 		"misattributed",
@@ -20,6 +22,7 @@
 		"pixelformat",
 		"preds",
 		"prio",
+		"rebindings",
 		"refetches",
 		"sdgcpu",
 		"trackio",

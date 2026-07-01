@@ -52,6 +52,10 @@ class TestResolveHfRevision:
         with pytest.raises(ValueError, match="revision is required"):
             resolve_hf_revision("owner/policy", None)
 
+    def test_blank_repo_requires_path(self) -> None:
+        with pytest.raises(ValueError, match="repository or local path is required"):
+            resolve_hf_revision(" ", None)
+
     def test_remote_repo_allows_explicit_revision(self) -> None:
         assert resolve_hf_revision("owner/policy", "abc123") == "abc123"
 

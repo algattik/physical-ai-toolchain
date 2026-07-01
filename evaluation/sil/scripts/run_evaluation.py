@@ -11,6 +11,12 @@ from pathlib import Path
 import numpy as np
 import torch
 
+_EVALUATION_ROOT = Path(__file__).resolve().parents[2]
+if str(_EVALUATION_ROOT) not in sys.path:
+    sys.path.insert(0, str(_EVALUATION_ROOT))
+
+from sil.hf_revision import resolve_hf_revision  # noqa: E402
+
 JOINT_NAMES: list[str] = []
 
 
@@ -301,15 +307,19 @@ def main() -> int:
     import pyarrow.parquet as pq
     from lerobot.policies.act.modeling_act import ACTPolicy
 
-    policy_repo_id = os.environ["POLICY_REPO_ID"]
+    policy_repo_id = os.environ.get("POLICY_REPO_ID", "").strip()
     policy_type = os.environ.get("POLICY_TYPE", "act")
     dataset_repo_id = os.environ.get("DATASET_REPO_ID", "")
-    policy_revision = os.environ.get("POLICY_REVISION") or None
+    policy_revision = os.environ.get("POLICY_REVISION", "").strip() or None
     dataset_revision = os.environ.get("DATASET_REVISION") or None
     eval_episodes = int(os.environ.get("EVAL_EPISODES", "10"))
     output_dir = Path(os.environ.get("OUTPUT_DIR", "/workspace/outputs/eval"))
     job_name = os.environ.get("JOB_NAME", "lerobot-eval")
     mlflow_enable = os.environ.get("MLFLOW_ENABLE", "false") == "true"
+
+    if not policy_repo_id:
+        print("[ERROR] POLICY_REPO_ID is required")
+        return 1
 
     output_dir.mkdir(parents=True, exist_ok=True)
 
@@ -350,8 +360,10 @@ def main() -> int:
 
     # Load policy (normalization is handled internally by select_action)
     print(f"[INFO] Loading policy from: {policy_repo_id}")
-    if not policy_revision and not Path(policy_repo_id).expanduser().exists():
-        print("[ERROR] POLICY_REVISION is required for remote HuggingFace policy repos")
+    try:
+        policy_revision = resolve_hf_revision(policy_repo_id, policy_revision, revision_name="POLICY_REVISION")
+    except ValueError as exc:
+        print(f"[ERROR] {exc}")
         return 1
     policy = ACTPolicy.from_pretrained(policy_repo_id, revision=policy_revision)
     policy.to(device)

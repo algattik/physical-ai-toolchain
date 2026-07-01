@@ -360,6 +360,18 @@ class TestInit:
 
         assert _PolicyRunner.last_init_kwargs == {}
 
+    @pytest.mark.parametrize("policy_revision", ("", "abc123"))
+    def test_blank_policy_repo_raises(self, policy_revision: str):
+        _PolicyRunner.last_init_kwargs = {}
+
+        with (
+            _node_parameter_overrides(policy_repo=" ", policy_revision=policy_revision),
+            pytest.raises(ValueError, match="policy_repo is required"),
+        ):
+            ain_module.ACTInferenceNode()
+
+        assert _PolicyRunner.last_init_kwargs == {}
+
     def test_remote_policy_accepts_revision(self):
         with _node_parameter_overrides(policy_revision="abc123"):
             node = ain_module.ACTInferenceNode()

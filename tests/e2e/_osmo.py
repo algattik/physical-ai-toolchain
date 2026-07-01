@@ -241,7 +241,11 @@ def cancel_osmo_workflow(workflow: OSMOWorkflow, repo_root: Path) -> None:
 
     log_e2e(f"Cancelling OSMO workflow {workflow.workflow_id}")
 
-    run_command(["osmo", "workflow", "cancel", workflow.workflow_id], cwd=repo_root)
+    result = run_command(["osmo", "workflow", "cancel", workflow.workflow_id], cwd=repo_root)
+    if result.returncode != 0:
+        raise AssertionError(
+            f"Failed to cancel OSMO workflow {workflow.workflow_id!r}\n\n{format_command_failure(result)}"
+        )
 
 
 @dataclass(frozen=True)

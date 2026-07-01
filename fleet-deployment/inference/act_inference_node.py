@@ -57,11 +57,15 @@ from trajectory_msgs.msg import JointTrajectory, JointTrajectoryPoint
 
 def _resolve_policy_revision(policy_repo: str, policy_revision: object) -> str | None:
     """Require immutable revisions for remote policy repositories."""
+    repo = str(policy_repo or "").strip()
+    if not repo:
+        raise ValueError("policy_repo is required")
+
     revision = str(policy_revision or "").strip()
     if revision:
         return revision
 
-    if Path(policy_repo).expanduser().exists():
+    if Path(repo).expanduser().exists():
         return None
 
     raise ValueError(
@@ -86,7 +90,7 @@ class ACTInferenceNode(Node):
         self.declare_parameter("camera_topic", "/camera/color/image_raw")
         self.declare_parameter("joint_states_topic", "/joint_states")
 
-        policy_repo = str(self.get_parameter("policy_repo").value)
+        policy_repo = str(self.get_parameter("policy_repo").value or "").strip()
         policy_revision = _resolve_policy_revision(policy_repo, self.get_parameter("policy_revision").value)
         device = self.get_parameter("device").value
         self._control_hz = self.get_parameter("control_hz").value

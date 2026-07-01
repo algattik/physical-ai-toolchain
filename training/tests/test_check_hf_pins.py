@@ -199,7 +199,6 @@ class TestYamlHeredocs:
 
         assert _MOD.main(["check_hf_pins.py", str(tmp_path / "training")]) == 1
 
-
     def test_flags_heredoc_written_to_py_file(self, tmp_path: Path) -> None:
         # ``cat > dl.py <<'PY' ... PY`` then ``python dl.py`` must not hide an unpinned call.
         root = tmp_path / "training"
@@ -260,8 +259,8 @@ class TestYamlInlineC:
         workflow = tmp_path / "training" / "workflows" / "osmo"
         workflow.mkdir(parents=True)
         (workflow / "train.yaml").write_text(
-            'command: |\n            python3 \\\n'
-            '              -c "from huggingface_hub import snapshot_download; snapshot_download(repo_id=\'x\')"\n',
+            "command: |\n            python3 \\\n"
+            "              -c \"from huggingface_hub import snapshot_download; snapshot_download(repo_id='x')\"\n",
             encoding="utf-8",
         )
 

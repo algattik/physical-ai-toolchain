@@ -97,7 +97,7 @@ def delete_blob_prefix(
     description: str,
 ) -> None:
     log_e2e(f"Deleting {description} under {container}/{prefix}")
-    run_command(
+    result = run_command(
         [
             "az",
             "storage",
@@ -115,6 +115,11 @@ def delete_blob_prefix(
         ],
         cwd=repo_root,
     )
+    if result.returncode != 0:
+        raise AssertionError(
+            f"Failed to delete {description} under {storage_account}/{container}/{prefix}\n\n"
+            f"{format_command_failure(result)}"
+        )
 
 
 def parse_json_from_output(output: str) -> Any:
