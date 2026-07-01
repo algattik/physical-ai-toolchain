@@ -48,6 +48,16 @@ The 18 write permissions below are required by the action or CLI invoked in the 
 | `scorecard.yml`               | `analysis`                  | `security-events: write` | Required by `github/codeql-action/upload-sarif` to publish OpenSSF Scorecard findings to the Security tab.                   |
 | `weekly-validation.yml`       | `container-rescan`          | `security-events: write` | Inherited by reusable `container-scan.yml`; required for SARIF upload of the soft-fail base-image rescan.                    |
 
+## 🔑 GitHub App Token Write Scopes
+
+The workflow-scoped `GITHUB_TOKEN` remains read-only. Workflows that need repository mutations mint GitHub App tokens for the minimum write scopes required by the corresponding step.
+
+| Workflow                          | Step                        | Token scope              | Rationale                                                                                                  |
+|-----------------------------------|-----------------------------|--------------------------|------------------------------------------------------------------------------------------------------------|
+| `container-cve-remediation.yml`   | `Generate GitHub App token` | `contents: write`        | Required to push digest-bump branches and update files when a clean replacement base-image digest exists. |
+| `container-cve-remediation.yml`   | `Generate GitHub App token` | `issues: write`          | Required to open or refresh tracking issues when no clean replacement base-image digest is available.      |
+| `container-cve-remediation.yml`   | `Generate GitHub App token` | `pull-requests: write`   | Required to open digest-bump pull requests for human review.                                               |
+
 ## 🛡️ Defense in Depth
 
 The release-publishing path uses additional hardening beyond minimum permissions:

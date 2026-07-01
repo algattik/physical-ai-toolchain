@@ -26,6 +26,8 @@ Usage:
         --dataset-dir /path/to/dataset
 """
 
+from __future__ import annotations
+
 import argparse
 import json
 import os
@@ -46,7 +48,7 @@ except ImportError:
     from lerobot_dataset import select_image_key  # type: ignore[no-redef]
 
 
-def _safe_throughput(inf_times: "np.ndarray | list[float]") -> float:
+def _safe_throughput(inf_times: np.ndarray | list[float]) -> float:
     """Return mean inverse latency in Hz, or 0.0 when latency is zero or invalid.
 
     Avoids ``RuntimeWarning: divide by zero`` when test fixtures or

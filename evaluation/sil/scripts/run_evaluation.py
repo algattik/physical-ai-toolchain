@@ -1,5 +1,7 @@
 """LeRobot replay-based inference evaluation."""
 
+from __future__ import annotations
+
 import json
 import os
 import sys
