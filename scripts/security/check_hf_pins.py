@@ -129,6 +129,28 @@ def _python_heredocs(text: str) -> Iterator[tuple[int, str]]:
         i = end + 1
 
 
+def _logical_shell_lines(text: str) -> Iterator[tuple[int, str]]:
+    """Yield shell logical lines with backslash continuations joined."""
+    start_lineno = 1
+    parts: list[str] = []
+
+    for lineno, raw_line in enumerate(text.splitlines(), start=1):
+        line = raw_line.rstrip()
+        if not parts:
+            start_lineno = lineno
+
+        if line.endswith("\\"):
+            parts.append(line[:-1])
+            continue
+
+        parts.append(line)
+        yield start_lineno, " ".join(parts)
+        parts = []
+
+    if parts:
+        yield start_lineno, " ".join(parts)
+
+
 def _python_inline_c(text: str) -> Iterator[tuple[int, str]]:
     """Yield ``(lineno, code)`` for each ``python -c "<code>"`` invocation.
 
@@ -136,7 +158,7 @@ def _python_inline_c(text: str) -> Iterator[tuple[int, str]]:
     heredocs; the quoted payload is extracted so its AST can be scanned. Line
     numbers are 1-based against the YAML file.
     """
-    for lineno, line in enumerate(text.splitlines(), start=1):
+    for lineno, line in _logical_shell_lines(text):
         if "python" not in line or "-c" not in line:
             continue
         try:

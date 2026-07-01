@@ -90,6 +90,8 @@ from isaaclab_tasks.utils import get_checkpoint_path
 from isaaclab_tasks.utils.hydra import hydra_task_config
 from rsl_rl.runners import DistillationRunner, OnPolicyRunner
 
+from training.packaging.scripts.export_policy import write_sha256_sidecar
+
 # PLACEHOLDER: Extension template (do not remove this comment)
 
 
@@ -186,7 +188,9 @@ def main(
     # export policy to onnx/jit
     export_model_dir = os.path.join(os.path.dirname(resume_path), "exported")
     export_policy_as_jit(policy_nn, normalizer=normalizer, path=export_model_dir, filename="policy.pt")
+    write_sha256_sidecar(os.path.join(export_model_dir, "policy.pt"))
     export_policy_as_onnx(policy_nn, normalizer=normalizer, path=export_model_dir, filename="policy.onnx")
+    write_sha256_sidecar(os.path.join(export_model_dir, "policy.onnx"))
 
     dt = env.unwrapped.step_dt
 

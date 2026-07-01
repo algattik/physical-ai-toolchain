@@ -215,7 +215,7 @@ def load_actor_from_checkpoint(
     return actor, normalizer, arch
 
 
-def _write_sha256_sidecar(filepath: str) -> str:
+def write_sha256_sidecar(filepath: str) -> str:
     """Write a ``sha256sum``-format ``<filepath>.sha256`` next to ``filepath``.
 
     Consumed by ``play_policy._verify_model_integrity`` to detect a corrupted model
@@ -275,7 +275,7 @@ def export_policy(
         print("Exporting JIT model...")
         exporter = _TorchPolicyExporter(actor, normalizer)
         jit_path = exporter.export(output_dir, "policy.pt")
-        _write_sha256_sidecar(jit_path)
+        write_sha256_sidecar(jit_path)
         exported["jit"] = jit_path
         print(f"  -> {jit_path}")
 
@@ -283,7 +283,7 @@ def export_policy(
         print("Exporting ONNX model...")
         exporter = _OnnxPolicyExporter(actor, normalizer)
         onnx_path = exporter.export(output_dir, arch.obs_dim, "policy.onnx")
-        _write_sha256_sidecar(onnx_path)
+        write_sha256_sidecar(onnx_path)
         exported["onnx"] = onnx_path
         print(f"  -> {onnx_path}")
 

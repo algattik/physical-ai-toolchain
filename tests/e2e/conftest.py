@@ -14,7 +14,7 @@ from tests.e2e._aml import AzureMLWorkspace
 from tests.e2e._common import run_command
 
 AML_COMPUTE_NAME_MAX_LENGTH = 16
-TFVARS_FALLBACK_OUTPUT_KEYS = ("resource_group", "azureml_workspace", "aks_cluster")
+TFVARS_FALLBACK_OUTPUT_KEYS = ("resource_group", "azureml_workspace", "aks_cluster", "storage_account")
 
 
 @dataclass(frozen=True)
@@ -114,6 +114,7 @@ def _tfvars_outputs(terraform_dir: Path) -> TerraformOutputs:
             "resource_group": {"value": {"name": resource_group_name}},
             "azureml_workspace": {"value": {"name": f"mlw-{suffix}"}},
             "aks_cluster": {"value": {"name": f"aks-{suffix}"}},
+            "storage_account": {"value": {"name": f"st{resource_prefix}{environment}{instance}"}},
         }
     )
 

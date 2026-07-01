@@ -189,6 +189,17 @@ class TestYamlInlineC:
 
         assert _MOD.main(["check_hf_pins.py", str(tmp_path / "training")]) == 1
 
+    def test_flags_backslash_split_inline_c(self, tmp_path: Path) -> None:
+        workflow = tmp_path / "training" / "workflows" / "osmo"
+        workflow.mkdir(parents=True)
+        (workflow / "train.yaml").write_text(
+            'command: |\n            python3 \\\n'
+            '              -c "from huggingface_hub import snapshot_download; snapshot_download(repo_id=\'x\')"\n',
+            encoding="utf-8",
+        )
+
+        assert _MOD.main(["check_hf_pins.py", str(tmp_path / "training")]) == 1
+
     def test_fails_closed_on_unparseable_inline_c_with_guarded_call(self, tmp_path: Path, capsys) -> None:
         # A guarded call in a payload that will not parse (e.g. shell ${VAR}) must fail closed.
         workflow = tmp_path / "training" / "workflows" / "osmo"

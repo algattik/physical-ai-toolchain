@@ -345,11 +345,15 @@ class TaskPodLogStream:
 
     def stop(self, *, timeout_seconds: float = 30.0) -> None:
         self._stop.set()
+        self._terminate_current_process()
+        self._thread.join(timeout=timeout_seconds)
+        self._terminate_current_process()
+
+    def _terminate_current_process(self) -> None:
         with self._proc_lock:
             proc = self._proc
         if proc is not None and proc.poll() is None:
             proc.terminate()
-        self._thread.join(timeout=timeout_seconds)
 
     def _run(self) -> None:
         if shutil.which("kubectl") is None:
@@ -373,6 +377,8 @@ class TaskPodLogStream:
                 reported[pod.name] = signature
 
             if pod.started and pod.name not in streamed:
+                if self._stop.is_set():
+                    return
                 streamed.add(pod.name)
                 self._follow(pod.name)
                 continue
@@ -405,6 +411,9 @@ class TaskPodLogStream:
         return _task_pod_from_item(newest, self._task_name)
 
     def _follow(self, pod_name: str) -> None:
+        if self._stop.is_set():
+            return
+
         log_e2e(f"Streaming logs for OSMO task {self._task_name} (pod {pod_name})")
         try:
             proc = subprocess.Popen(
@@ -421,6 +430,9 @@ class TaskPodLogStream:
 
         with self._proc_lock:
             self._proc = proc
+            should_stop = self._stop.is_set()
+        if should_stop and proc.poll() is None:
+            proc.terminate()
         try:
             assert proc.stdout is not None
             for line in proc.stdout:

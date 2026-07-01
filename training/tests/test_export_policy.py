@@ -179,7 +179,7 @@ class TestExportPolicy:
         load_actor = mocker.patch.object(_MOD, "load_actor_from_checkpoint", return_value=(actor, None, arch))
         jit_export = mocker.patch.object(_MOD._TorchPolicyExporter, "export", return_value="/exports/policy.pt")
         onnx_export = mocker.patch.object(_MOD._OnnxPolicyExporter, "export", return_value="/exports/policy.onnx")
-        sidecar = mocker.patch.object(_MOD, "_write_sha256_sidecar")
+        sidecar = mocker.patch.object(_MOD, "write_sha256_sidecar")
 
         exported = _MOD.export_policy(
             checkpoint_path="checkpoint.pt",
@@ -222,7 +222,7 @@ class TestSha256Sidecar:
         model_path = tmp_path / "policy.pt"
         model_path.write_bytes(b"scripted-model-bytes")
 
-        sidecar = _MOD._write_sha256_sidecar(str(model_path))
+        sidecar = _MOD.write_sha256_sidecar(str(model_path))
 
         expected = hashlib.sha256(b"scripted-model-bytes").hexdigest()
         assert sidecar == str(model_path) + ".sha256"
