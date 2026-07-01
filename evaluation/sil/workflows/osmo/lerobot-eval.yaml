@@ -331,6 +331,9 @@ workflow:
             import numpy as np
             import torch
 
+            sys.path.insert(0, str(Path(os.environ["PAYLOAD_ROOT"]) / "evaluation" / "sil" / "scripts"))
+            from lerobot_dataset import select_image_key
+
             # Resolved dynamically from dataset info.json after dataset is loaded
             JOINT_NAMES = None
 
@@ -585,18 +588,7 @@ workflow:
                     JOINT_NAMES = [f"joint_{j}" for j in range(n_action)]
                 print(f"[INFO] Action dims: {len(JOINT_NAMES)} — {JOINT_NAMES[:4]}{'...' if len(JOINT_NAMES) > 4 else ''}")
 
-                # Discover image key from dataset features: prefer an
-                # observation.images.* camera, else the first video/image
-                # feature, else a conventional default.
-                features = info.get("features", {})
-                video_keys = [
-                    k for k, v in features.items()
-                    if v.get("dtype") in ("video", "image")
-                ]
-                image_key = next(
-                    (k for k in video_keys if k.startswith("observation.images.")),
-                    video_keys[0] if video_keys else "observation.images.color",
-                )
+                image_key = select_image_key(info.get("features", {}))
                 print(f"[INFO] Using image key: {image_key}")
 
                 # Load policy (LeRobot 0.3.x — normalize/unnormalize handled internally)
