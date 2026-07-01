@@ -180,9 +180,12 @@ def submit_aml_training(
     task: str,
     max_iterations: int,
     num_envs: int,
-    register_model_name: str,
+    register_model_name: str | None = None,
 ) -> AzureMLJob:
     experiment_name = e2e_name("rl-training-e2e-aml")
+    register_args = (
+        ["--register-checkpoint", register_model_name] if register_model_name else ["--skip-register-checkpoint"]
+    )
     log_e2e(
         "Submitting AzureML training job "
         f"for task={task}, num_envs={num_envs}, max_iterations={max_iterations}, experiment={experiment_name}"
@@ -199,8 +202,7 @@ def submit_aml_training(
             "--experiment-name",
             experiment_name,
             *_submit_workspace_args(aml_workspace),
-            "--register-checkpoint",
-            register_model_name,
+            *register_args,
         ],
         cwd=repo_root,
     )
@@ -220,9 +222,10 @@ def submit_aml_lerobot_training(
     save_freq: int,
     batch_size: int,
     log_freq: int,
-    register_model_name: str,
+    register_model_name: str | None = None,
 ) -> AzureMLJob:
     experiment_name = e2e_name("il-training-e2e-aml")
+    register_args = ["--register-checkpoint", register_model_name] if register_model_name else []
     log_e2e(
         "Submitting AzureML LeRobot training job "
         f"for dataset={blob_url}, policy={policy_type}, training_steps={training_steps}, "
@@ -250,8 +253,7 @@ def submit_aml_lerobot_training(
             "--experiment-name",
             experiment_name,
             *_submit_workspace_args(aml_workspace),
-            "--register-checkpoint",
-            register_model_name,
+            *register_args,
         ],
         cwd=repo_root,
     )
@@ -261,6 +263,7 @@ def submit_aml_lerobot_training(
     return _aml_job_from_submission(result, aml_workspace, experiment_name, "AzureML LeRobot training")
 
 
+_AML_LEROBOT_EVAL_POLICY_REPO_ENV = "E2E_AML_LEROBOT_EVAL_POLICY_REPO_ID"
 _AML_LEROBOT_EVAL_MODEL_ENV = "E2E_AML_LEROBOT_EVAL_MODEL"
 _AML_ISAAC_EVAL_MODEL_ENV = "E2E_AML_ISAAC_EVAL_MODEL"
 
@@ -297,15 +300,37 @@ def resolve_aml_lerobot_eval_policy_override() -> AmlLeRobotEvalPolicySource | N
     """Resolve an eval policy source from the environment, or ``None`` when unset.
 
     ``submit-azureml-lerobot-eval.sh`` has no ``--builtin-policy`` option, so a real
-    policy must be supplied. Configure:
+    policy must be supplied. Configure one of:
 
+    - ``E2E_AML_LEROBOT_EVAL_POLICY_REPO_ID`` — a HuggingFace policy repo id.
     - ``E2E_AML_LEROBOT_EVAL_MODEL`` — an AzureML model ``name:version``.
 
-    Returns ``None`` when this is unset: the lifecycle test provisions a freshly
-    trained model instead. Malformed values skip.
+    Returns ``None`` when neither is set: the standalone eval test skips, while the
+    lifecycle test provisions a freshly trained model instead. Malformed values skip.
     """
+    policy_repo_id = env_value(_AML_LEROBOT_EVAL_POLICY_REPO_ENV)
+    if policy_repo_id:
+        return AmlLeRobotEvalPolicySource(
+            args=("--policy-repo-id", policy_repo_id),
+            description=f"HuggingFace policy repo {policy_repo_id}",
+        )
     ref = _resolve_aml_model_env(_AML_LEROBOT_EVAL_MODEL_ENV)
     return None if ref is None else aml_lerobot_policy_source_from_model(ref)
+
+
+def resolve_aml_lerobot_eval_policy_source() -> AmlLeRobotEvalPolicySource:
+    """Resolve the eval policy source, skipping the standalone test if none is configured.
+
+    Resolve this before staging any dataset so the skip does not waste that work.
+    """
+    source = resolve_aml_lerobot_eval_policy_override()
+    if source is None:
+        pytest.skip(
+            "No eval policy source configured; set "
+            f"{_AML_LEROBOT_EVAL_POLICY_REPO_ENV} (HuggingFace repo) or "
+            f"{_AML_LEROBOT_EVAL_MODEL_ENV} (AzureML model name:version)"
+        )
+    return source
 
 
 def submit_aml_lerobot_eval(
@@ -358,9 +383,22 @@ def submit_aml_lerobot_eval(
     return _aml_job_from_submission(result, aml_workspace, experiment_name, "AzureML LeRobot eval")
 
 
-def resolve_aml_isaac_eval_model_override() -> AmlModelRef | None:
-    """Resolve an AzureML eval model from the environment, or ``None`` when unset."""
+def resolve_isaac_eval_model_override() -> AmlModelRef | None:
+    """Resolve an AzureML eval model from the environment, or ``None`` when unset.
+
+    Set ``E2E_AML_ISAAC_EVAL_MODEL`` to an AzureML model ``name:version``. Returns
+    ``None`` when unset: the standalone eval test skips, the lifecycle test provisions
+    a freshly trained model instead. Malformed values skip.
+    """
     return _resolve_aml_model_env(_AML_ISAAC_EVAL_MODEL_ENV)
+
+
+def resolve_isaac_eval_model() -> AmlModelRef:
+    """Resolve the AzureML eval model, skipping the standalone test if none is configured."""
+    model = resolve_isaac_eval_model_override()
+    if model is None:
+        pytest.skip(f"No eval model configured; set {_AML_ISAAC_EVAL_MODEL_ENV} to an AzureML model name:version")
+    return model
 
 
 def submit_aml_isaaclab_eval(
@@ -368,7 +406,6 @@ def submit_aml_isaaclab_eval(
     aml_workspace: AzureMLWorkspace,
     *,
     model: AmlModelRef,
-    task: str,
     eval_episodes: int,
     num_envs: int,
 ) -> AzureMLJob:
@@ -376,7 +413,7 @@ def submit_aml_isaaclab_eval(
     experiment_name = e2e_name("rl-eval-e2e-aml")
     log_e2e(
         "Submitting AzureML Isaac Lab eval job "
-        f"for model={model.name}:{model.version}, task={task}, eval_episodes={eval_episodes}, num_envs={num_envs}, "
+        f"for model={model.name}:{model.version}, eval_episodes={eval_episodes}, num_envs={num_envs}, "
         f"experiment={experiment_name}"
     )
     result = run_command(
@@ -386,17 +423,15 @@ def submit_aml_isaaclab_eval(
             model.name,
             "--model-version",
             model.version,
-            "--task",
-            task,
             "--eval-episodes",
             str(eval_episodes),
             "--num-envs",
             str(num_envs),
-            # The e2e validates the submission + Isaac Lab eval runtime, not policy
-            # quality, so a 0.0 threshold accepts any success rate and the job
-            # completes regardless of the reference policy's score.
+            # E2E validates the submission + Isaac Lab eval runtime, not policy
+            # quality: the reference rough-terrain policy deterministically scores
+            # 0.5 over this 2-episode smoke run, below the model's 0.7 quality gate.
             "--success-threshold",
-            "0.0",
+            "0.5",
             "--experiment-name",
             experiment_name,
             *_submit_workspace_args(aml_workspace),

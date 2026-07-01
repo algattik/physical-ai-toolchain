@@ -21,13 +21,11 @@ from pathlib import Path
 import pytest
 
 from tests.e2e._aml import (
-    _AML_ISAAC_EVAL_MODEL_ENV,
     AzureMLWorkspace,
-    archive_all_model_versions,
     assert_job_has_checkpoint,
     assert_job_snapshot_contains_only_training,
     cancel_aml_job,
-    resolve_aml_isaac_eval_model_override,
+    resolve_isaac_eval_model_override,
     resolve_registered_model,
     submit_aml_isaaclab_eval,
     submit_aml_training,
@@ -40,38 +38,6 @@ from tests.e2e._mlflow import assert_aml_job_has_mlflow_tracking
 _TASK = "Isaac-Velocity-Rough-Anymal-C-v0"
 
 
-def test_resolve_aml_isaac_eval_model_override_model(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv(_AML_ISAAC_EVAL_MODEL_ENV, "name:version")
-
-    model = resolve_aml_isaac_eval_model_override()
-
-    assert model is not None
-    assert model.name == "name"
-    assert model.version == "version"
-
-
-def test_resolve_aml_isaac_eval_model_override_model_without_colon(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv(_AML_ISAAC_EVAL_MODEL_ENV, "name_only")
-
-    with pytest.raises(pytest.skip.Exception):
-        resolve_aml_isaac_eval_model_override()
-
-
-def test_resolve_aml_isaac_eval_model_override_model_empty_parts(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv(_AML_ISAAC_EVAL_MODEL_ENV, "name:")
-
-    with pytest.raises(pytest.skip.Exception):
-        resolve_aml_isaac_eval_model_override()
-
-
-def test_resolve_aml_isaac_eval_model_override_none(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.delenv(_AML_ISAAC_EVAL_MODEL_ENV, raising=False)
-
-    model = resolve_aml_isaac_eval_model_override()
-
-    assert model is None
-
-
 @pytest.mark.e2e
 @pytest.mark.usefixtures("aml_compute_target")
 def test_aml_rl_lifecycle_e2e(
@@ -80,7 +46,7 @@ def test_aml_rl_lifecycle_e2e(
     repo_root: Path,
 ) -> None:
     log_e2e("Starting AzureML RL (Isaac Lab) lifecycle e2e test")
-    model = resolve_aml_isaac_eval_model_override()
+    model = resolve_isaac_eval_model_override()
     if model is None:
         register_model_name = e2e_name("rl-e2e-aml-model")
         job = submit_aml_training(
@@ -104,7 +70,6 @@ def test_aml_rl_lifecycle_e2e(
         log_e2e("Validating AzureML checkpoint output")
         assert_job_has_checkpoint(job)
         model = resolve_registered_model(repo_root, aml_workspace, model_name=register_model_name)
-        request.addfinalizer(lambda: archive_all_model_versions(repo_root, aml_workspace, register_model_name))
     else:
         log_e2e(f"Using pre-registered eval model {model.name}:{model.version} (training skipped)")
 
@@ -112,7 +77,6 @@ def test_aml_rl_lifecycle_e2e(
         repo_root,
         aml_workspace,
         model=model,
-        task=_TASK,
         eval_episodes=2,
         num_envs=4,
     )

@@ -6,7 +6,8 @@ under a unique model name, validates the training outputs, resolves the concrete
 registered model version (never ``latest``), then evaluates that model against the same
 dataset via ``submit-azureml-lerobot-eval.sh``.
 
-Set ``E2E_AML_LEROBOT_EVAL_MODEL`` (AzureML ``name:version``) to skip training and evaluate a
+Set ``E2E_AML_LEROBOT_EVAL_POLICY_REPO_ID`` (HuggingFace repo) or
+``E2E_AML_LEROBOT_EVAL_MODEL`` (AzureML ``name:version``) to skip training and evaluate a
 pre-existing policy — a fast inner loop while fixing the eval path.
 
 ```shell

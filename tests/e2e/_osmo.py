@@ -13,7 +13,7 @@ from typing import Any
 
 import pytest
 
-from tests.e2e._aml import AzureMLWorkspace
+from tests.e2e._aml import AmlModelRef, AzureMLWorkspace
 from tests.e2e._common import (
     delete_blob_prefix,
     e2e_name,
@@ -26,9 +26,35 @@ from tests.e2e._common import (
     wait_for_status,
 )
 
-OSMO_STARTED_STATES = {"RUNNING", "COMPLETED", "SUCCEEDED"}
+OSMO_SUCCESS_STATES = {"COMPLETED", "SUCCEEDED"}
+OSMO_STARTED_STATES = {"RUNNING", *OSMO_SUCCESS_STATES}
 OSMO_FAILURE_PREFIXES = ("FAILED",)
 OSMO_FAILURE_STATES = {"CANCELLED", "CANCELED", "ERROR"}
+
+# Terminal statuses that reflect the GPU node disappearing (spot reclaim, cluster
+# autoscaler consolidation, or a manual drain) rather than a defect in the workload.
+# OSMO maps a Kubernetes DisruptionTarget eviction to FAILED_BACKEND_ERROR and scheduler
+# preemption to FAILED_PREEMPTED/FAILED_EVICTED. These are recovered by restarting the
+# workflow in place; genuine application failures (FAILED, FAILED_EXEC_TIMEOUT, ...) are not.
+OSMO_NODE_DISRUPTION_STATES = {"FAILED_BACKEND_ERROR", "FAILED_EVICTED", "FAILED_PREEMPTED"}
+
+# Non-terminal statuses a workflow passes through once a restart has taken effect.
+OSMO_ALIVE_STATES = {
+    "SUBMITTING",
+    "WAITING",
+    "PROCESSING",
+    "SCHEDULING",
+    "INITIALIZING",
+    "RUNNING",
+    "RESCHEDULED",
+}
+
+# Spot A100 capacity is reclaimed occasionally, not continuously, so a small restart budget
+# survives isolated evictions without masking a genuinely unschedulable or defective job.
+_OSMO_MAX_NODE_DISRUPTION_RESTARTS = 3
+# A restart only has to move the workflow out of its terminal FAILED status back into an
+# alive status; that transition is fast even though the subsequent cold start is not.
+_OSMO_RESTART_SETTLE_TIMEOUT_MINUTES = 10
 
 # A workflow only reports RUNNING once its task container is live, so the "started"
 # wait must absorb a full cold scale-from-zero path: GPU node provisioning, NVIDIA
@@ -80,9 +106,13 @@ def submit_osmo_training(
     task: str,
     max_iterations: int,
     num_envs: int,
+    register_model_name: str | None = None,
 ) -> OSMOWorkflow:
     experiment_name = f"isaaclab-{task}" if task else "isaaclab-training"
     correlation_id = _e2e_correlation_id()
+    register_args = (
+        ["--register-checkpoint", register_model_name] if register_model_name else ["--skip-register-checkpoint"]
+    )
     log_e2e(
         "Submitting OSMO workflow "
         f"for task={task}, num_envs={num_envs}, max_iterations={max_iterations}, experiment={experiment_name}, "
@@ -105,7 +135,7 @@ def submit_osmo_training(
             "180Gi",
             "--correlation-id",
             correlation_id,
-            "--skip-register-checkpoint",
+            *register_args,
             "--",
             "--format-type",
             "json",
@@ -133,6 +163,53 @@ def submit_osmo_training(
     )
 
 
+def submit_osmo_dataset_training(
+    repo_root: Path,
+    *,
+    task: str,
+    max_iterations: int,
+    num_envs: int,
+) -> OSMOWorkflow:
+    """Submit OSMO RL training via the dataset-folder-injection delivery path.
+
+    Distinct from ``submit_osmo_training`` (base64 archive): this uploads the training
+    code as a versioned OSMO dataset via ``localpath``. The training itself is identical,
+    so MLflow behaviour is already covered by the archive test; here the delivery mechanism
+    is what is exercised. The script exposes no ``--correlation-id`` flag, so the caller
+    verifies success via the workflow task status rather than an MLflow correlation lookup.
+    """
+    experiment_name = f"isaaclab-{task}" if task else "isaaclab-training"
+    log_e2e(
+        "Submitting OSMO dataset-injection workflow "
+        f"for task={task}, num_envs={num_envs}, max_iterations={max_iterations}, experiment={experiment_name}"
+    )
+    result = run_command(
+        [
+            str(repo_root / "training/rl/scripts/submit-osmo-dataset-training.sh"),
+            "--task",
+            task,
+            "--max-iterations",
+            str(max_iterations),
+            "--num-envs",
+            str(num_envs),
+            # Smoke-sized to fit a single Standard_NC24ads_A100_v4 GPU node (24 vCPU / 220 GiB).
+            "--cpu",
+            "20",
+            "--memory",
+            "180Gi",
+            "--skip-register-checkpoint",
+            "--",
+            "--format-type",
+            "json",
+        ],
+        cwd=repo_root,
+    )
+    if result.returncode != 0:
+        raise AssertionError(f"OSMO dataset-injection e2e submission failed\n\n{format_command_failure(result)}")
+
+    return _osmo_workflow_from_submission(result, experiment_name, "OSMO dataset-injection training")
+
+
 def _fetch_osmo_workflow_payload(workflow: OSMOWorkflow, repo_root: Path) -> dict[str, Any]:
     result = run_command(
         ["osmo", "workflow", "query", workflow.workflow_id, "--format-type", "json"],
@@ -154,6 +231,10 @@ def _osmo_status(payload: Mapping[str, Any]) -> str:
     return status or "UNKNOWN"
 
 
+def _current_osmo_status(workflow: OSMOWorkflow, repo_root: Path) -> str:
+    return _osmo_status(_fetch_osmo_workflow_payload(workflow, repo_root))
+
+
 def wait_until_osmo_started(
     workflow: OSMOWorkflow,
     repo_root: Path,
@@ -162,7 +243,7 @@ def wait_until_osmo_started(
     poll_interval_seconds: int = OSMO_POLL_INTERVAL_SECONDS,
 ) -> None:
     wait_for_status(
-        lambda: _osmo_status(_fetch_osmo_workflow_payload(workflow, repo_root)),
+        lambda: _current_osmo_status(workflow, repo_root),
         goal_description=f"OSMO workflow {workflow.workflow_id} to start",
         timeout_minutes=timeout_minutes,
         poll_interval_seconds=poll_interval_seconds,
@@ -179,24 +260,78 @@ def wait_until_osmo_completed(
     timeout_minutes: int,
     poll_interval_seconds: int = OSMO_POLL_INTERVAL_SECONDS,
 ) -> None:
-    terminal_status = wait_for_status(
-        lambda: _osmo_status(_fetch_osmo_workflow_payload(workflow, repo_root)),
-        goal_description=f"OSMO workflow {workflow.workflow_id} to complete",
-        timeout_minutes=timeout_minutes,
-        poll_interval_seconds=poll_interval_seconds,
-        success_statuses={"COMPLETED", "SUCCEEDED"},
-        failure_statuses=OSMO_FAILURE_STATES,
-        failure_matcher=lambda status: any(status.startswith(prefix) for prefix in OSMO_FAILURE_PREFIXES),
-        on_failure=lambda status: _mark_workflow_terminal(workflow, status),
-        status_log_prefix="Completion poll status",
-    )
-    _mark_workflow_terminal(workflow, terminal_status)
-    log_e2e(f"OSMO workflow {workflow.workflow_id} completed successfully")
+    # A node-disruption terminal (spot reclaim, autoscaler drain, preemption) is not a
+    # workload defect: exit the completion poll on it so the workflow can be restarted in
+    # place, and reserve a raised failure for a genuine application failure.
+    def _is_application_failure(status: str) -> bool:
+        return (
+            any(status.startswith(prefix) for prefix in OSMO_FAILURE_PREFIXES)
+            and status not in OSMO_NODE_DISRUPTION_STATES
+        )
+
+    for restart_count in range(_OSMO_MAX_NODE_DISRUPTION_RESTARTS + 1):
+        terminal_status = wait_for_status(
+            lambda: _current_osmo_status(workflow, repo_root),
+            goal_description=f"OSMO workflow {workflow.workflow_id} to complete",
+            timeout_minutes=timeout_minutes,
+            poll_interval_seconds=poll_interval_seconds,
+            success_statuses=OSMO_SUCCESS_STATES | OSMO_NODE_DISRUPTION_STATES,
+            failure_statuses=OSMO_FAILURE_STATES,
+            failure_matcher=_is_application_failure,
+            on_failure=lambda status: _mark_workflow_terminal(workflow, status),
+            status_log_prefix="Completion poll status",
+        )
+        if terminal_status.upper() in OSMO_SUCCESS_STATES:
+            _mark_workflow_terminal(workflow, terminal_status)
+            log_e2e(f"OSMO workflow {workflow.workflow_id} completed successfully")
+            return
+
+        if restart_count >= _OSMO_MAX_NODE_DISRUPTION_RESTARTS:
+            _mark_workflow_terminal(workflow, terminal_status)
+            raise AssertionError(
+                f"OSMO workflow {workflow.workflow_id} kept failing with node-disruption status "
+                f"{terminal_status!r} across {_OSMO_MAX_NODE_DISRUPTION_RESTARTS} restarts"
+            )
+
+        log_e2e(
+            f"OSMO workflow {workflow.workflow_id} hit node-disruption status {terminal_status}; "
+            f"restarting in place (attempt {restart_count + 1}/{_OSMO_MAX_NODE_DISRUPTION_RESTARTS})"
+        )
+        _restart_osmo_workflow(workflow, repo_root)
+        _wait_until_osmo_restarted(workflow, repo_root, poll_interval_seconds=poll_interval_seconds)
 
 
 def _mark_workflow_terminal(workflow: OSMOWorkflow, terminal_status: str) -> None:
     workflow.is_terminal = True
     workflow.terminal_status = terminal_status
+
+
+def _restart_osmo_workflow(workflow: OSMOWorkflow, repo_root: Path) -> None:
+    log_e2e(f"Restarting OSMO workflow {workflow.workflow_id} after node disruption")
+    result = run_command(["osmo", "workflow", "restart", workflow.workflow_id], cwd=repo_root)
+    if result.returncode != 0:
+        raise AssertionError(
+            f"Failed to restart OSMO workflow {workflow.workflow_id!r}\n\n{format_command_failure(result)}"
+        )
+
+
+def _wait_until_osmo_restarted(
+    workflow: OSMOWorkflow,
+    repo_root: Path,
+    *,
+    poll_interval_seconds: int = OSMO_POLL_INTERVAL_SECONDS,
+) -> None:
+    # `osmo workflow restart` reuses the workflow id, but the query briefly still reports the
+    # prior FAILED status; poll (tolerating that stale terminal) until the workflow re-enters an
+    # alive status or has already completed, so the completion wait does not re-read the stale one.
+    wait_for_status(
+        lambda: _current_osmo_status(workflow, repo_root),
+        goal_description=f"OSMO workflow {workflow.workflow_id} to resume after restart",
+        timeout_minutes=_OSMO_RESTART_SETTLE_TIMEOUT_MINUTES,
+        poll_interval_seconds=poll_interval_seconds,
+        success_statuses=OSMO_ALIVE_STATES | OSMO_SUCCESS_STATES,
+        status_log_prefix="Restart poll status",
+    )
 
 
 def assert_workflow_task_succeeded(workflow: OSMOWorkflow, repo_root: Path, task_name: str) -> None:
@@ -507,8 +642,10 @@ def submit_osmo_lerobot_training(
     batch_size: int,
     learning_rate: str,
     log_freq: int,
+    register_model_name: str | None = None,
 ) -> OSMOWorkflow:
     experiment_name = e2e_name("il-training-e2e-osmo")
+    register_args = ["--register-checkpoint", register_model_name] if register_model_name else []
     log_e2e(
         "Submitting OSMO LeRobot training workflow "
         f"for dataset={blob_url}, policy={policy_type}, training_steps={training_steps}, "
@@ -543,6 +680,7 @@ def submit_osmo_lerobot_training(
             aml_workspace.resource_group,
             "--azure-workspace-name",
             aml_workspace.workspace_name,
+            *register_args,
             "--",
             "--format-type",
             "json",
@@ -560,25 +698,52 @@ _LEROBOT_EVAL_POLICY_REPO_ENV = "E2E_LEROBOT_EVAL_POLICY_REPO_ID"
 _LEROBOT_EVAL_POLICY_REVISION_ENV = "E2E_LEROBOT_EVAL_POLICY_REVISION"
 
 
-def _lerobot_eval_model_source_args() -> tuple[list[str], str]:
+@dataclass(frozen=True)
+class OsmoLeRobotEvalPolicySource:
+    """Resolved policy source for the OSMO LeRobot eval submission."""
+
+    args: tuple[str, ...]
+    description: str
+
+
+def osmo_lerobot_policy_source_from_model(model: AmlModelRef) -> OsmoLeRobotEvalPolicySource:
+    """Build an eval policy source from a concrete registered AzureML model."""
+    return OsmoLeRobotEvalPolicySource(
+        args=("--from-aml-model", "--model-name", model.name, "--model-version", model.version),
+        description=f"AzureML model {model.name}:{model.version}",
+    )
+
+
+def osmo_lerobot_builtin_policy_source() -> OsmoLeRobotEvalPolicySource:
+    """Mint a base policy in-container from LeRobot's built-in ACT architecture.
+
+    Keeps the standalone eval self-contained (no external policy / HuggingFace token).
+    """
+    return OsmoLeRobotEvalPolicySource(
+        args=("--builtin-policy",),
+        description="LeRobot built-in (minted base policy)",
+    )
+
+
+def resolve_osmo_lerobot_eval_policy_override() -> OsmoLeRobotEvalPolicySource | None:
+    """Resolve an eval policy source from the environment, or ``None`` when unset.
+
+    Configure one of ``E2E_LEROBOT_EVAL_POLICY_REPO_ID`` (HuggingFace repo) or
+    ``E2E_LEROBOT_EVAL_MODEL`` (AzureML model ``name:version``). Malformed values skip.
+    """
     policy_repo_id = env_value(_LEROBOT_EVAL_POLICY_REPO_ENV)
     if policy_repo_id:
         policy_revision = env_value(_LEROBOT_EVAL_POLICY_REVISION_ENV)
         if not policy_revision:
             pytest.skip(f"{_LEROBOT_EVAL_POLICY_REVISION_ENV} is required when {_LEROBOT_EVAL_POLICY_REPO_ENV} is set")
-        return [
-            "--policy-repo-id",
-            policy_repo_id,
-            "--policy-revision",
-            policy_revision,
-        ], f"HuggingFace policy repo {policy_repo_id}@{policy_revision}"
+        return OsmoLeRobotEvalPolicySource(
+            args=("--policy-repo-id", policy_repo_id, "--policy-revision", policy_revision),
+            description=f"HuggingFace policy repo {policy_repo_id}@{policy_revision}",
+        )
 
     model = env_value(_LEROBOT_EVAL_MODEL_ENV)
     if not model:
-        # Default: mint a base policy in-container from LeRobot's built-in ACT
-        # architecture, sized to the synthetic dataset. Keeps the eval self-contained
-        # (no external policy / HuggingFace token). Override via the env vars above.
-        return ["--builtin-policy"], "LeRobot built-in (minted base policy, default)"
+        return None
     if ":" not in model:
         pytest.skip(f"{_LEROBOT_EVAL_MODEL_ENV} must use AzureML model name:version syntax")
 
@@ -586,19 +751,14 @@ def _lerobot_eval_model_source_args() -> tuple[list[str], str]:
     if not model_name or not model_version:
         pytest.skip(f"{_LEROBOT_EVAL_MODEL_ENV} must include a non-empty AzureML model name and version")
 
-    return [
-        "--from-aml-model",
-        "--model-name",
-        model_name,
-        "--model-version",
-        model_version,
-    ], f"AzureML model {model_name}:{model_version}"
+    return osmo_lerobot_policy_source_from_model(AmlModelRef(name=model_name, version=model_version))
 
 
 def submit_osmo_lerobot_eval(
     repo_root: Path,
     aml_workspace: AzureMLWorkspace,
     *,
+    policy_source: OsmoLeRobotEvalPolicySource,
     policy_type: str,
     eval_episodes: int,
     eval_batch_size: int,
@@ -606,7 +766,8 @@ def submit_osmo_lerobot_eval(
     blob_container: str,
     blob_prefix: str,
 ) -> OSMOWorkflow:
-    model_args, model_description = _lerobot_eval_model_source_args()
+    model_args = list(policy_source.args)
+    model_description = policy_source.description
     dataset_args = [
         "--from-blob-dataset",
         "--storage-account",
@@ -658,6 +819,72 @@ def submit_osmo_lerobot_eval(
         raise AssertionError(f"OSMO LeRobot eval e2e submission failed\n\n{format_command_failure(result)}")
 
     return _osmo_workflow_from_submission(result, experiment_name, "OSMO LeRobot eval", correlation_id=experiment_name)
+
+
+_OSMO_ISAAC_EVAL_CHECKPOINT_URI_ENV = "E2E_OSMO_RL_EVAL_CHECKPOINT_URI"
+
+
+def resolve_osmo_isaac_eval_checkpoint_override() -> str | None:
+    """Resolve an eval checkpoint URI from the environment, or ``None`` when unset.
+
+    Set ``E2E_OSMO_RL_EVAL_CHECKPOINT_URI`` to an MLflow (``runs:/<id>/path`` or
+    ``models:/<name>/<version>``), Azure Blob, or HTTP(S) checkpoint URI. Returns
+    ``None`` when unset: the standalone eval test skips, the lifecycle test provisions
+    a freshly trained checkpoint instead.
+    """
+    return env_value(_OSMO_ISAAC_EVAL_CHECKPOINT_URI_ENV) or None
+
+
+def resolve_osmo_isaac_eval_checkpoint() -> str:
+    """Resolve the eval checkpoint URI, skipping the standalone test if none is configured."""
+    checkpoint_uri = resolve_osmo_isaac_eval_checkpoint_override()
+    if not checkpoint_uri:
+        pytest.skip(f"No eval checkpoint configured; set {_OSMO_ISAAC_EVAL_CHECKPOINT_URI_ENV} to a checkpoint URI")
+    return checkpoint_uri
+
+
+def submit_osmo_isaaclab_eval(
+    repo_root: Path,
+    aml_workspace: AzureMLWorkspace,
+    *,
+    checkpoint_uri: str,
+    task: str,
+    num_envs: int,
+    max_steps: int,
+) -> OSMOWorkflow:
+    """Submit the OSMO Isaac Lab evaluation/inference workflow against a checkpoint URI."""
+    experiment_name = f"isaaclab-inference-{task}" if task else "isaaclab-inference"
+    log_e2e(
+        "Submitting OSMO Isaac Lab eval workflow "
+        f"for task={task}, num_envs={num_envs}, max_steps={max_steps}, checkpoint_uri={checkpoint_uri}"
+    )
+    result = run_command(
+        [
+            str(repo_root / "evaluation/sil/scripts/submit-osmo-eval.sh"),
+            "--checkpoint-uri",
+            checkpoint_uri,
+            "--task",
+            task,
+            "--num-envs",
+            str(num_envs),
+            "--max-steps",
+            str(max_steps),
+            "--azure-subscription-id",
+            aml_workspace.subscription_id,
+            "--azure-resource-group",
+            aml_workspace.resource_group,
+            "--azure-workspace-name",
+            aml_workspace.workspace_name,
+            "--",
+            "--format-type",
+            "json",
+        ],
+        cwd=repo_root,
+    )
+    if result.returncode != 0:
+        raise AssertionError(f"OSMO Isaac Lab eval e2e submission failed\n\n{format_command_failure(result)}")
+
+    return _osmo_workflow_from_submission(result, experiment_name, "OSMO Isaac Lab eval")
 
 
 _VLA_DATASET_BLOB_URL_ENV = "E2E_VLA_DATASET_BLOB_URL"

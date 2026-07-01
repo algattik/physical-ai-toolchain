@@ -60,6 +60,8 @@ derive_azureml_environment_version_from_image() {
   printf '%s\n' "$version"
 }
 
+# Register an AzureML environment from a base container image.
+# Idempotent: an existing name:version is treated as success.
 register_azureml_environment() {
   local name="${1:?environment name required}" version="${2:?environment version required}"
   local image="${3:?image required}" rg="${4:?resource group required}"

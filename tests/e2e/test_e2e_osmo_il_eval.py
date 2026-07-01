@@ -25,9 +25,10 @@ from tests.e2e._lerobot_dataset import stage_synthetic_lerobot_dataset
 from tests.e2e._mlflow import assert_osmo_lerobot_eval_has_mlflow_tracking
 from tests.e2e._osmo import (
     OSMOWorkflow,
-    _lerobot_eval_model_source_args,
     assert_workflow_task_succeeded,
     cancel_osmo_workflow,
+    osmo_lerobot_builtin_policy_source,
+    resolve_osmo_lerobot_eval_policy_override,
     start_task_pod_log_stream,
     submit_osmo_lerobot_eval,
     wait_until_osmo_completed,
@@ -78,10 +79,11 @@ def test_lerobot_eval_policy_repo_forwards_revision(monkeypatch: pytest.MonkeyPa
     monkeypatch.setenv("E2E_LEROBOT_EVAL_POLICY_REVISION", "abc123")
     monkeypatch.delenv("E2E_LEROBOT_EVAL_MODEL", raising=False)
 
-    args, description = _lerobot_eval_model_source_args()
+    policy_source = resolve_osmo_lerobot_eval_policy_override()
 
-    assert args == ["--policy-repo-id", "org/policy", "--policy-revision", "abc123"]
-    assert description == "HuggingFace policy repo org/policy@abc123"
+    assert policy_source is not None
+    assert policy_source.args == ("--policy-repo-id", "org/policy", "--policy-revision", "abc123")
+    assert policy_source.description == "HuggingFace policy repo org/policy@abc123"
 
 
 def test_lerobot_eval_policy_repo_requires_revision(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -90,7 +92,7 @@ def test_lerobot_eval_policy_repo_requires_revision(monkeypatch: pytest.MonkeyPa
     monkeypatch.delenv("E2E_LEROBOT_EVAL_MODEL", raising=False)
 
     with pytest.raises(pytest.skip.Exception):
-        _lerobot_eval_model_source_args()
+        resolve_osmo_lerobot_eval_policy_override()
 
 
 @pytest.mark.e2e
@@ -103,10 +105,12 @@ def test_osmo_il_eval_e2e(
     storage_account: str,
 ) -> None:
     log_e2e("Starting OSMO IL (LeRobot) eval e2e test")
+    policy_source = resolve_osmo_lerobot_eval_policy_override() or osmo_lerobot_builtin_policy_source()
     dataset = stage_synthetic_lerobot_dataset(request, repo_root, storage_account)
     workflow = submit_osmo_lerobot_eval(
         repo_root,
         aml_workspace,
+        policy_source=policy_source,
         policy_type="act",
         eval_episodes=1,
         eval_batch_size=1,

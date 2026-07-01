@@ -35,6 +35,7 @@ settings:
 inputs:
   dataset:
     type: uri_folder
+  dataset_repo_id: dataset
   policy_type: act
   job_name: lerobot-pipeline
   compute_preprocess: azureml:cpu-cluster

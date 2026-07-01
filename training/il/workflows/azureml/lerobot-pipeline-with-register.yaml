@@ -39,6 +39,7 @@ settings:
 inputs:
   dataset:
     type: uri_folder
+  dataset_repo_id: dataset
   policy_type: act
   job_name: lerobot-pipeline
   register_model_name: lerobot-policy

@@ -22,6 +22,13 @@ if TYPE_CHECKING:
 
 _LOGGER = logging.getLogger("evaluation.vlm_judge")
 
+_DEFAULT_MODEL_ID = "Qwen/Qwen3-VL-4B-Instruct"
+# Immutable commit SHAs for the model ids shipped as defaults. An overridden
+# model id resolves to None (mutable HEAD) and is the caller's responsibility.
+_PINNED_REVISIONS: dict[str, str] = {
+    _DEFAULT_MODEL_ID: "ebb281ec70b05090aa6165b016eac8ec08e71b17",
+}
+
 
 @dataclass(frozen=True, slots=True)
 class GenerationConfig:
@@ -58,16 +65,12 @@ class Qwen3VLBackend(JudgeBackend):
     Defaults to ``Qwen/Qwen3-VL-4B-Instruct`` which fits on a 24GB GPU in
     bf16. Larger variants (``8B``, ``30B-A3B``) work the same way; pass the
     model id via ``model_id`` and adjust ``dtype`` / ``device_map`` as needed.
-    Pass ``revision`` (an immutable commit SHA) to pin the Hub download for
-    reproducible, tamper-evident judging; ``None`` resolves the mutable default
-    branch.
     """
 
     def __init__(
         self,
         *,
-        model_id: str = "Qwen/Qwen3-VL-4B-Instruct",
-        revision: str | None = None,
+        model_id: str = _DEFAULT_MODEL_ID,
         device_map: str = "auto",
         dtype: str = "bfloat16",
         attn_implementation: str | None = "sdpa",
@@ -79,6 +82,7 @@ class Qwen3VLBackend(JudgeBackend):
         self.name = model_id
         self._torch = torch
         self._dtype = getattr(torch, dtype)
+        revision = _PINNED_REVISIONS.get(model_id)
         self._processor = AutoProcessor.from_pretrained(
             model_id,
             revision=revision,
