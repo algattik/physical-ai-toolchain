@@ -25,7 +25,7 @@ This document enumerates every job-scoped write permission across `.github/workf
 
 ## 🔒 Job-Scoped Write Permissions
 
-The 17 write permissions below are required by the action or CLI invoked in the corresponding job. Each grant is the minimum scope needed.
+The 18 write permissions below are required by the action or CLI invoked in the corresponding job. Each grant is the minimum scope needed.
 
 | Workflow                      | Job                         | Permission               | Rationale                                                                                                                    |
 |-------------------------------|-----------------------------|--------------------------|------------------------------------------------------------------------------------------------------------------------------|
@@ -46,6 +46,7 @@ The 17 write permissions below are required by the action or CLI invoked in the 
 | `pr-validation.yml`           | `codeql-analysis`           | `security-events: write` | Inherited by reusable `codeql-analysis.yml`; required for SARIF upload.                                                      |
 | `pr-validation.yml`           | `container-scan`            | `security-events: write` | Inherited by reusable `container-scan.yml`; required for SARIF upload.                                                       |
 | `scorecard.yml`               | `analysis`                  | `security-events: write` | Required by `github/codeql-action/upload-sarif` to publish OpenSSF Scorecard findings to the Security tab.                   |
+| `weekly-validation.yml`       | `container-rescan`          | `security-events: write` | Inherited by reusable `container-scan.yml`; required for SARIF upload of the soft-fail base-image rescan.                    |
 
 ## 🛡️ Defense in Depth
 
