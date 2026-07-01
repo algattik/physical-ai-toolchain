@@ -236,6 +236,11 @@ esac
 # default; a caller-supplied --base-model must bring its own --base-model-revision.
 [[ -z "$base_model_revision" && "$base_model" == "$default_base_model" ]] && base_model_revision="$default_base_model_revision"
 
+# A remote HuggingFace repo id (org/name, not an absolute on-disk path) must be
+# pinned to an immutable commit; refuse a mutable HEAD. Absolute paths are exempt —
+# the workflow resolves an on-disk base model directly without a Hub download.
+[[ -z "$base_model_revision" && "$base_model" != /* ]] && fatal "--base-model-revision is required for remote base model '$base_model' (refusing a mutable HEAD)"
+
 [[ -z "$base_model" ]] && fatal "--base-model is required"
 [[ -z "$data_config" ]] && fatal "--data-config is required"
 [[ -z "$blob_url" ]] && fatal "--blob-url is required (no dataset source configured)"

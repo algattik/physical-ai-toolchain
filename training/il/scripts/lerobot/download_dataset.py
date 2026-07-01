@@ -77,8 +77,14 @@ def verify_checksums(dataset_dir: Path) -> None:
     Azure transport ``validate_content`` is CRC32 only — it detects corruption,
     not malicious substitution. This verifies content SHA256 against the manifest
     staged with the dataset at upload time, and rejects any file present on disk
-    but absent from the manifest, so an attacker who can substitute blobs cannot
-    smuggle in an extra auto-loaded file that no entry covers.
+    but absent from the manifest.
+
+    Scope: this defends against transport corruption and against a partial-write
+    attacker who cannot touch the manifest. It does NOT defend against an attacker
+    with write access to the whole container, who can rewrite ``meta/checksums.sha256``
+    to match poisoned blobs; for that threat the manifest's own digest must be pinned
+    out-of-band (e.g. an AzureML asset property) and checked before its entries are
+    trusted.
 
     A missing manifest is a warning by default (legacy datasets predate it). Set
     ``REQUIRE_CHECKSUMS`` to a truthy value to turn the absent-manifest case into a

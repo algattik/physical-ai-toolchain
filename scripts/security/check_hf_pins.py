@@ -4,8 +4,9 @@
 Bare ``repo_id`` calls resolve a mutable HEAD, so an upstream account or org
 compromise can silently ship new weights or a poisoned dataset into evaluation
 and deployed inference. This guard parses the AST of production ``.py`` files and
-of inline ``python3 << 'DELIM'`` heredocs embedded in workflow YAML — the OSMO
-download paths live there, invisible to a ``.py``-only walk — and rejects any
+of inline ``python3 << 'DELIM'`` heredocs and ``python -c "..."`` one-liners
+embedded in workflow YAML — the OSMO download paths live there, invisible to a
+``.py``-only walk — and rejects any
 ``from_pretrained`` / ``snapshot_download`` / ``hf_hub_download`` call that has no
 explicit ``revision`` keyword. A literal ``revision=None`` is rejected too: it is
 provably unpinned. A ``**kwargs`` splat is accepted, since it cannot be resolved
@@ -41,8 +42,14 @@ _EXCLUDED_PARTS = frozenset({"tests", "external", "node_modules", ".venv", ".git
 
 # ``python3 << 'DELIM'``, ``python3 - <<'DELIM'``, ``python -u <<-"DELIM"`` heredoc
 # opener in workflow YAML. The optional ``[^<\n]*`` allows the stdin ``-`` marker and
-# any interpreter flags that commonly precede the redirection.
-_HEREDOC_RE = re.compile(r"\bpython3?\s+(?:[^<\n]*\s)?<<-?\s*['\"]?(\w+)['\"]?\s*$")
+# any interpreter flags that commonly precede the redirection. A trailing token after
+# the delimiter (a redirect ``> log`` or pipe ``| tee``) is allowed so those forms are
+# not silently skipped.
+_HEREDOC_RE = re.compile(r"\bpython3?\s+(?:[^<\n]*\s)?<<-?\s*['\"]?(\w+)['\"]?(?:\s|$)")
+
+# ``python -c "<code>"`` / ``python3 -c '<code>'`` one-liner in workflow YAML. The
+# shell-quoted payload is captured so its AST can be scanned like any other source.
+_INLINE_C_RE = re.compile(r"\bpython3?\s+(?:-\S+\s+)*-c\s+(['\"])(?P<code>.*?)\1", re.DOTALL)
 
 
 class ScanError(RuntimeError):
@@ -123,6 +130,33 @@ def _python_heredocs(text: str) -> Iterator[tuple[int, str]]:
         i = end + 1
 
 
+def _python_inline_c(text: str) -> Iterator[tuple[int, str]]:
+    """Yield ``(lineno, code)`` for each ``python -c "<code>"`` invocation.
+
+    Workflow YAML embeds guarded downloads as ``python -c`` one-liners as well as
+    heredocs; the quoted payload is extracted so its AST can be scanned. Line
+    numbers are 1-based against the YAML file.
+    """
+    for match in _INLINE_C_RE.finditer(text):
+        lineno = text.count("\n", 0, match.start()) + 1
+        yield lineno, match.group("code")
+
+
+def _violations_in_inline(code: str, filename: str) -> list[tuple[int, int, str]]:
+    """Scan a ``python -c`` payload, failing closed only when a guarded call is unverifiable.
+
+    Inline snippets frequently contain shell ``${VAR}`` interpolation that is not
+    valid Python; such a snippet is skipped. But if it mentions a guarded function,
+    an unparseable payload is a hard failure rather than a silent bypass.
+    """
+    try:
+        return _violations_in_source(code, filename)
+    except ScanError:
+        if any(fn in code for fn in _GUARDED_FUNCTIONS):
+            raise
+        return []
+
+
 def _violations_in_file(path: Path) -> list[tuple[int, int, str]]:
     try:
         text = path.read_text(encoding="utf-8")
@@ -134,6 +168,9 @@ def _violations_in_file(path: Path) -> list[tuple[int, int, str]]:
         for offset, block in _python_heredocs(text):
             for lineno, col, name in _violations_in_source(block, str(path)):
                 found.append((offset + lineno - 1, col, name))
+        for lineno, code in _python_inline_c(text):
+            for _code_lineno, col, name in _violations_in_inline(code, str(path)):
+                found.append((lineno, col, name))
         return found
 
     return _violations_in_source(text, str(path))

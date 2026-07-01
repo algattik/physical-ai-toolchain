@@ -3,7 +3,7 @@ sidebar_position: 3
 title: OSMO Inference Workflows
 description: Execute trained robotics policy inference using NVIDIA OSMO with Isaac Lab and LeRobot frameworks
 author: Microsoft Robotics-AI Team
-ms.date: 2026-06-12
+ms.date: 2026-07-01
 ms.topic: how-to
 keywords:
   - OSMO
@@ -107,14 +107,18 @@ osmo workflow logs <workflow-id> | grep "checkpoint"
 | Parameter           | Required | Default | Description                                     |
 |---------------------|----------|---------|-------------------------------------------------|
 | `--policy-repo-id`  | One of*  | —       | HuggingFace model repo                          |
+| `--policy-revision` | Cond.†   | —       | HuggingFace commit SHA pinning the policy repo  |
 | `--builtin-policy`  | One of*  | —       | Mint a base policy from LeRobot's built-in arch |
 | `--policy-type`     | No       | `act`   | Policy architecture                             |
 | `--dataset-repo-id` | No       | —       | Evaluation dataset                              |
+| `--dataset-revision`| Cond.‡   | —       | HuggingFace commit SHA pinning the dataset repo |
 | `--eval-episodes`   | No       | `10`    | Number of evaluation episodes                   |
 | `--eval-batch-size` | No       | `1`     | Batch size for evaluation                       |
 | `--record-video`    | No       | `false` | Enable video recording                          |
 
 *Exactly one policy source is required: `--policy-repo-id`, `--from-aml-model`, or `--builtin-policy`. `--builtin-policy` mints a self-contained base policy from the local dataset and requires `--from-blob-dataset`.
+
+†Required with `--policy-repo-id`: a Hub download without a pinned commit SHA resolves a mutable HEAD and is rejected. ‡Required with `--dataset-repo-id`, for the same reason.
 
 ### Usage Examples
 
@@ -123,7 +127,8 @@ Basic evaluation:
 ```bash
 osmo workflow submit \
   --file workflows/osmo/lerobot-infer.yaml \
-  --set policy_repo_id=<hf-repo-id>
+  --set policy_repo_id=<hf-repo-id> \
+  --set policy_revision=<commit-sha>
 ```
 
 With video recording:
@@ -132,6 +137,7 @@ With video recording:
 osmo workflow submit \
   --file workflows/osmo/lerobot-infer.yaml \
   --set policy_repo_id=<hf-repo-id> \
+  --set policy_revision=<commit-sha> \
   --set record_video=true \
   --set eval_episodes=20
 ```
@@ -142,6 +148,7 @@ Model registration:
 osmo workflow submit \
   --file workflows/osmo/lerobot-infer.yaml \
   --set policy_repo_id=<hf-repo-id> \
+  --set policy_revision=<commit-sha> \
   --set register_model=true
 ```
 

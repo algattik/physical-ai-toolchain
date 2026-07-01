@@ -19,6 +19,8 @@ from pathlib import Path
 import torch
 import torch.nn as nn
 
+_HASH_CHUNK_BYTES = 1024 * 1024
+
 
 @dataclass
 class PolicyArchitecture:
@@ -216,8 +218,8 @@ def load_actor_from_checkpoint(
 def _write_sha256_sidecar(filepath: str) -> str:
     """Write a ``sha256sum``-format ``<filepath>.sha256`` next to ``filepath``.
 
-    Consumed by ``play_policy._verify_jit_integrity`` to reject a substituted
-    TorchScript model before ``torch.jit.load`` deserializes it.
+    Consumed by ``play_policy._verify_model_integrity`` to reject a substituted
+    model (TorchScript or ONNX) before it is deserialized/loaded.
 
     Returns:
         Path to the written sidecar.
@@ -225,7 +227,7 @@ def _write_sha256_sidecar(filepath: str) -> str:
     path = Path(filepath)
     digest = hashlib.sha256()
     with path.open("rb") as f:
-        for chunk in iter(lambda: f.read(1024 * 1024), b""):
+        for chunk in iter(lambda: f.read(_HASH_CHUNK_BYTES), b""):
             digest.update(chunk)
     sidecar = path.with_name(f"{path.name}.sha256")
     with sidecar.open("w", encoding="utf-8") as f:
@@ -278,6 +280,7 @@ def export_policy(
         print("Exporting ONNX model...")
         exporter = _OnnxPolicyExporter(actor, normalizer)
         onnx_path = exporter.export(output_dir, arch.obs_dim, "policy.onnx")
+        _write_sha256_sidecar(onnx_path)
         exported["onnx"] = onnx_path
         print(f"  -> {onnx_path}")
 

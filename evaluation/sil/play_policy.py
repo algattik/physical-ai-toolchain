@@ -19,6 +19,8 @@ from isaaclab.app import AppLauncher
 from training.rl import cli_args  # isort: skip
 from training.rl.simulation_shutdown import prepare_for_shutdown
 
+_HASH_CHUNK_BYTES = 1024 * 1024
+
 parser = argparse.ArgumentParser(description="Run inference using an exported ONNX or TorchScript policy.")
 parser.add_argument("--video", action="store_true", default=False, help="Record videos during inference.")
 parser.add_argument(
@@ -200,23 +202,25 @@ class RslRl3xCompatWrapper:
         return self._ensure_tensordict(result), {}
 
 
-def _verify_jit_integrity(jit_path: str) -> None:
-    """Verify a TorchScript file against its sidecar SHA256 before loading.
+def _verify_model_integrity(model_path: str) -> None:
+    """Verify an exported model against its sidecar SHA256 before loading.
 
-    ``torch.jit.load`` deserializes embedded operators, so a substituted model
-    is a code-execution vector. ``export_policy.py`` writes ``<path>.sha256``
-    (``sha256sum`` format) next to every exported ``policy.pt``; the load is
-    rejected on mismatch. A missing sidecar is a hard failure for integrity-gated
-    inputs — pass a sidecar produced by the export pipeline.
+    Both ``torch.jit.load`` (TorchScript) and ``ort.InferenceSession`` (ONNX)
+    consume attacker-influenceable model files — a substituted TorchScript model is
+    a code-execution vector, and a substituted ONNX model yields attacker-controlled
+    robot actions. ``export_policy.py`` writes ``<path>.sha256`` (``sha256sum``
+    format) next to every exported model; the load is rejected on mismatch. A
+    missing sidecar is a hard failure for integrity-gated inputs — pass a sidecar
+    produced by the export pipeline.
 
     Raises:
         FileNotFoundError: If the sidecar manifest is absent.
         ValueError: If the file digest does not match the manifest.
     """
-    manifest = Path(f"{jit_path}.sha256")
+    manifest = Path(f"{model_path}.sha256")
     if not manifest.exists():
         raise FileNotFoundError(
-            f"Missing integrity manifest {manifest}; TorchScript models must ship a SHA256 sidecar from export"
+            f"Missing integrity manifest {manifest}; exported models must ship a SHA256 sidecar from export"
         )
     tokens = manifest.read_text(encoding="utf-8").split()
     if not tokens:
@@ -224,13 +228,13 @@ def _verify_jit_integrity(jit_path: str) -> None:
     expected = tokens[0].strip().lower()
 
     digest = hashlib.sha256()
-    with open(jit_path, "rb") as f:
-        for chunk in iter(lambda: f.read(1024 * 1024), b""):
+    with open(model_path, "rb") as f:
+        for chunk in iter(lambda: f.read(_HASH_CHUNK_BYTES), b""):
             digest.update(chunk)
     actual = digest.hexdigest()
 
     if actual != expected:
-        raise ValueError(f"SHA256 mismatch for {jit_path}: expected {expected}, got {actual}")
+        raise ValueError(f"SHA256 mismatch for {model_path}: expected {expected}, got {actual}")
 
 
 class JitPolicy:
@@ -246,7 +250,7 @@ class JitPolicy:
         self.device = device
 
         print(f"[INFO] Loading JIT model from: {jit_path}")
-        _verify_jit_integrity(jit_path)
+        _verify_model_integrity(jit_path)
         self.model = torch.jit.load(jit_path, map_location=device)
         self.model.eval()
         print(f"[INFO] JIT model loaded on device: {device}")
@@ -286,6 +290,7 @@ class OnnxPolicy:
             providers = ["CUDAExecutionProvider", "CPUExecutionProvider"]
 
         print(f"[INFO] Loading ONNX model from: {onnx_path}")
+        _verify_model_integrity(onnx_path)
         self.session = ort.InferenceSession(onnx_path, providers=providers)
 
         active_provider = self.session.get_providers()[0]

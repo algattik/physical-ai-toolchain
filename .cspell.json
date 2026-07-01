@@ -7,6 +7,7 @@
 		"TODO"
 	],
 	"words": [
+		"dedented",
 		"envaccount",
 		"envcontainer",
 		"getfixturevalue",
@@ -22,6 +23,8 @@
 		"sdgcpu",
 		"trackio",
 		"unbuilt",
+		"unparseable",
+		"unpickler",
 		"unstub",
 		"uppercased",
 		"uvlock",

@@ -194,7 +194,7 @@ class TestExportPolicy:
         load_actor.assert_called_once_with("checkpoint.pt", 3, 2, [], "relu")
         jit_export.assert_called_once_with(str(tmp_path), "policy.pt")
         onnx_export.assert_called_once_with(str(tmp_path), 3, "policy.onnx")
-        sidecar.assert_called_once_with("/exports/policy.pt")
+        assert sidecar.call_args_list == [mocker.call("/exports/policy.pt"), mocker.call("/exports/policy.onnx")]
 
     def test_skips_disabled_export_formats(self, mocker: MockerFixture, tmp_path: Path) -> None:
         actor = torch.nn.Linear(3, 2)

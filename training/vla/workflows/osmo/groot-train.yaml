@@ -457,7 +457,8 @@ workflow:
               python -c "import sys; from huggingface_hub import snapshot_download; snapshot_download(repo_id=sys.argv[1], revision=sys.argv[2], local_dir=sys.argv[3]); print('[base-model] pinned', sys.argv[1], sys.argv[2], '->', sys.argv[3])" "${BASE_MODEL}" "${BASE_MODEL_REVISION}" "${BASE_MODEL_LOCAL}"
               BASE_MODEL="${BASE_MODEL_LOCAL}"
             elif [ -z "${BASE_MODEL_REVISION:-}" ] && [ ! -d "${BASE_MODEL}" ]; then
-              echo "WARNING: BASE_MODEL ${BASE_MODEL} is unpinned (no --base-model-revision); using mutable HEAD" >&2
+              echo "ERROR: BASE_MODEL ${BASE_MODEL} is a remote repo but base_model_revision is empty; refusing to train against a mutable HEAD" >&2
+              exit 1
             fi
 
             echo "--- starting training ---"
