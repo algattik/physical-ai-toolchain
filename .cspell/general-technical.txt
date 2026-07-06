@@ -1783,3 +1783,5 @@ vsmagent
 vsmserver
 WEBACCESS
 WEBADM
+exploitability
+triaging

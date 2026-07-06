@@ -4,7 +4,7 @@ description: >-
   Inventory and reference for GitHub Copilot agents, instructions, prompts,
   and skills configured in this repository.
 author: Microsoft Robotics-AI Team
-ms.date: 2026-05-04
+ms.date: 2026-07-06
 ms.topic: reference
 keywords:
   - copilot
@@ -32,6 +32,7 @@ automatically in VS Code.
 | Instruction | Dataviewer                 | Coding standards for dataviewer development         | `.github/instructions/dataviewer.instructions.md`                 |
 | Instruction | Docs Style and Conventions | Writing standards for all markdown files            | `.github/instructions/docs-style-and-conventions.instructions.md` |
 | Instruction | Shell Scripts              | Implementation standards for bash scripts           | `.github/instructions/shell-scripts.instructions.md`              |
+| Instruction | VEX Authoring              | OpenVEX authoring rules for base-image CVEs         | `.github/instructions/vex-authoring.instructions.md`              |
 | Prompt      | `/chatlog`                 | Create and maintain conversation logs               | `.github/prompts/chatlog.prompt.md`                               |
 | Prompt      | `/check-training-status`   | Monitor OSMO training job progress                  | `.github/prompts/check-training-status.prompt.md`                 |
 | Prompt      | `/start-dataviewer`        | Launch Dataset Analysis Tool                        | `.github/prompts/start-dataviewer.prompt.md`                      |
@@ -217,5 +218,7 @@ For broader project context, see these companion guides:
 
 ---
 
-*Crafted with precision by Copilot following brilliant human instruction,
+<!-- markdownlint-disable MD036 -->
+*🤖 Crafted with precision by ✨Copilot following brilliant human instruction,
 then carefully refined by our team of discerning human reviewers.*
+<!-- markdownlint-enable MD036 -->
