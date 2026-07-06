@@ -9,6 +9,9 @@
 
 #Requires -Version 7.0
 
+# Omit -Force so the standalone CIHelpers export is not shadowed by a nested re-import.
+Import-Module (Join-Path $PSScriptRoot '../../lib/Modules/CIHelpers.psm1')
+
 function Write-SecurityLog {
     <#
     .SYNOPSIS
@@ -30,11 +33,17 @@ function Write-SecurityLog {
     .PARAMETER OutputFormat
         Controls console output. 'console' enables colored output.
 
+    .PARAMETER CIAnnotation
+        When set, forwards Warning and Error messages as CI annotations via Write-CIAnnotation.
+
     .EXAMPLE
         Write-SecurityLog -Message "Scanning workflows" -Level Info
 
     .EXAMPLE
         Write-SecurityLog -Message "Stale SHA detected" -Level Warning -LogPath "./logs/security.log"
+
+    .EXAMPLE
+        Write-SecurityLog -Message "Missing permissions block" -Level Warning -CIAnnotation
     #>
     [CmdletBinding()]
     param(
@@ -50,7 +59,10 @@ function Write-SecurityLog {
         [string]$LogPath,
 
         [Parameter()]
-        [string]$OutputFormat = 'console'
+        [string]$OutputFormat = 'console',
+
+        [Parameter()]
+        [switch]$CIAnnotation
     )
 
     # Handle blank line requests
@@ -75,6 +87,11 @@ function Write-SecurityLog {
             'Verbose' { 'Cyan' }
         }
         Write-Host $logEntry -ForegroundColor $color
+    }
+
+    # Forward warnings and errors as CI annotations
+    if ($CIAnnotation -and ($Level -eq 'Warning' -or $Level -eq 'Error')) {
+        Write-CIAnnotation -Message $Message -Level $Level
     }
 
     # File logging if path provided
