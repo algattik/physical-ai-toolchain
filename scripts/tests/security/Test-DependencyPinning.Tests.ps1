@@ -1805,6 +1805,19 @@ Describe 'Get-RemediationSuggestion' -Tag 'Unit' {
         $result | Should -Be 'Manually research and pin to immutable reference'
     }
 
+    It 'Returns fallback when the API returns a value that is not a commit SHA' {
+        $violation = [DependencyViolation]::new()
+        $violation.Type = 'github-actions'
+        $violation.Name = 'actions/checkout'
+        $violation.Version = 'v4'
+
+        Mock Invoke-RestMethod { return @{ sha = 'not-a-valid-sha' } }
+
+        $result = Get-RemediationSuggestion -Violation $violation -Remediate
+        $result | Should -Be 'Manually research and pin to immutable reference'
+        $violation.Metadata.ContainsKey('ResolvedSha') | Should -BeFalse
+    }
+
     It 'Resolves subpath actions against the owner/repo slug' {
         $subpath = [DependencyViolation]::new()
         $subpath.Type = 'github-actions'
