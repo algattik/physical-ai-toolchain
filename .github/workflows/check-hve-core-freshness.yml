@@ -31,7 +31,7 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Check hve-core pin and derived files against latest release
+      - name: Check hve-core-derived files against latest release
         id: check
         env:
           GH_TOKEN: ${{ github.token }}
@@ -60,7 +60,7 @@ jobs:
         run: |
           . ./scripts/security/Test-HveCoreFreshness.ps1
           $existing = Get-HveCoreTrackingIssue
-          if ($existing) { $checkDate = Get-Date -Format 'yyyy-MM-dd' -AsUTC; gh issue close $existing --comment "✅ hve-core RPI pin and derived files are current as of $checkDate." }
+          if ($existing) { $checkDate = Get-Date -Format 'yyyy-MM-dd' -AsUTC; gh issue close $existing --comment "✅ hve-core-derived files are current as of $checkDate." }
           else { Write-Host "All current, no open tracking issue." }
 
       - name: Write job summary

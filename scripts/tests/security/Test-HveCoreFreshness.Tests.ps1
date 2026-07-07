@@ -12,19 +12,15 @@ BeforeAll {
         env:
           # microsoft/hve-core release: hve-core-v3.2.2 (2026-03-23)
           UPSTREAM_REF: e69486a5f809ede45c63c0a31358c12912bd5168
-          UPSTREAM_SUBAGENTS_PATH: .github/agents/hve-core/subagents
-          UPSTREAM_UMBRELLA_PATH: .github/agents/hve-core/rpi-agent.agent.md
         run: echo bootstrap
 '@ | Set-Content -Path $script:SetupPath -Encoding utf8
 }
 
 Describe 'Get-PinnedHveCoreRef' -Tag 'Unit' {
-    It 'Extracts the pinned SHA, release tag, and persona paths' {
+    It 'Extracts the pinned SHA and release tag' {
         $ref = Get-PinnedHveCoreRef -Path $script:SetupPath
         $ref.Sha | Should -Be 'e69486a5f809ede45c63c0a31358c12912bd5168'
         $ref.Tag | Should -Be 'hve-core-v3.2.2'
-        $ref.UmbrellaPath | Should -Be '.github/agents/hve-core/rpi-agent.agent.md'
-        $ref.SubagentsPath | Should -Be '.github/agents/hve-core/subagents'
     }
 
     It 'Returns null for a missing file' {
@@ -117,23 +113,6 @@ Describe 'Resolve-HveCoreCommitSha' -Tag 'Unit' {
     }
 }
 
-Describe 'Get-HveCoreSubagentNames' -Tag 'Unit' {
-    It 'Returns trimmed .agent.md names on success' {
-        Mock gh { $global:LASTEXITCODE = 0; "a.agent.md`nb.agent.md" }
-        Get-HveCoreSubagentNames -Repo 'o/r' -Path 'p' -Ref 'ref' | Should -Be @('a.agent.md', 'b.agent.md')
-    }
-
-    It 'Returns an empty array on a genuine 404 (directory absent at ref)' {
-        Mock gh { $global:LASTEXITCODE = 1; 'gh: Not Found (HTTP 404)' }
-        Get-HveCoreSubagentNames -Repo 'o/r' -Path 'p' -Ref 'ref' | Should -BeNullOrEmpty
-    }
-
-    It 'Throws on a non-404 gh api failure (transient/auth/rate limit)' {
-        Mock gh { $global:LASTEXITCODE = 1; 'gh: Internal Server Error (HTTP 500)' }
-        { Get-HveCoreSubagentNames -Repo 'o/r' -Path 'p' -Ref 'ref' } | Should -Throw
-    }
-}
-
 Describe 'Get-HveCoreFileDrift' -Tag 'Unit' {
     It 'Reports drift when the upstream blob changed between refs' {
         Mock gh {
@@ -163,64 +142,14 @@ Describe 'Get-HveCoreFileDrift' -Tag 'Unit' {
     }
 }
 
-Describe 'Get-HveCorePersonaDrift' -Tag 'Unit' {
-    It 'Flags drift when the umbrella agent changed' {
-        Mock Get-HveCoreSubagentNames { @('a.agent.md') }
-        Mock Get-HveCoreFileDrift {
-            $drift = $Path -like '*rpi-agent.agent.md'
-            $state = if ($drift) { 'drift' } else { 'current' }
-            [ordered]@{ Path = $Path; PinnedUpstreamSha = 'p'; LatestUpstreamSha = 'l'; Drift = $drift; State = $state }
-        }
-        $res = Get-HveCorePersonaDrift -Repo 'o/r' -UmbrellaPath 'x/rpi-agent.agent.md' -SubagentsPath 'x/subagents' -PinnedRef 'PIN' -LatestRef 'LATEST'
-        $res.Count | Should -Be 2
-        @($res | Where-Object { $_.Drift }).Count | Should -Be 1
-    }
-
-    It 'Flags a subagent that exists at only one ref (added or removed upstream)' {
-        Mock Get-HveCoreSubagentNames { @('a.agent.md') }
-        Mock Get-HveCoreSubagentNames -ParameterFilter { $Ref -eq 'LATEST' } -MockWith { @('a.agent.md', 'new.agent.md') }
-        Mock Get-HveCoreFileDrift {
-            $drift = $Path -like '*new.agent.md'
-            $pinned = if ($drift) { '' } else { 'p' }
-            $state = if ($drift) { 'drift' } else { 'current' }
-            [ordered]@{ Path = $Path; PinnedUpstreamSha = $pinned; LatestUpstreamSha = 'l'; Drift = $drift; State = $state }
-        }
-        $res = Get-HveCorePersonaDrift -Repo 'o/r' -UmbrellaPath 'x/rpi-agent.agent.md' -SubagentsPath 'x/subagents' -PinnedRef 'PIN' -LatestRef 'LATEST'
-        $res.Count | Should -Be 3
-        @($res | Where-Object { $_.Drift }).Count | Should -Be 1
-    }
-
-    It 'Reports no drift when the umbrella and all subagents are unchanged' {
-        Mock Get-HveCoreSubagentNames { @('a.agent.md', 'b.agent.md') }
-        Mock Get-HveCoreFileDrift {
-            [ordered]@{ Path = $Path; PinnedUpstreamSha = 's'; LatestUpstreamSha = 's'; Drift = $false; State = 'current' }
-        }
-        $res = Get-HveCorePersonaDrift -Repo 'o/r' -UmbrellaPath 'x/rpi-agent.agent.md' -SubagentsPath 'x/subagents' -PinnedRef 'PIN' -LatestRef 'LATEST'
-        $res.Count | Should -Be 3
-        @($res | Where-Object { $_.Drift }).Count | Should -Be 0
-    }
-}
-
 Describe 'Format-HveCoreIssueBody' -Tag 'Unit' {
     It 'Formats the issue body with correct markers and links' {
         $r = [pscustomobject]@{
             LatestTag = 'hve-core-v9'
             LatestUrl = 'http://u'
-            LatestSha = ('a'*40)
             Pin = [pscustomobject]@{
                 PinnedTag = 'hve-core-v1'
-                PinnedSha = ('b'*40)
-                IsStale = $true
                 File = '.github/workflows/copilot-setup-steps.yml'
-                Personas = @(
-                    [pscustomobject]@{
-                        Path = '.github/agents/hve-core/rpi-agent.agent.md'
-                        PinnedUpstreamSha = '8e97ba2'
-                        LatestUpstreamSha = 'db5b3b6'
-                        Drift = $true
-                        State = 'drift'
-                    }
-                )
             }
             Files = @(
                 [pscustomobject]@{
@@ -233,14 +162,12 @@ Describe 'Format-HveCoreIssueBody' -Tag 'Unit' {
             )
         }
         $body = Format-HveCoreIssueBody -Result $r -RunUrl 'http://run' -CheckDate '2026-01-01'
-        
+
         $body | Should -Match '<!-- automation:hve-core-freshness -->'
         $body | Should -Match 'hve-core-v9'
         $body | Should -Match 'scripts/x\.psm1'
-        $body | Should -Match 'rpi-agent\.agent\.md'
-        $body | Should -Match '1 persona file'
         $body | Should -Match 'compare/hve-core-v1\.\.\.hve-core-v9'
-        $body | Should -Not -Match 'overwrite the local copy'
+        $body | Should -Not -Match '[Pp]ersona'
     }
 }
 
@@ -249,21 +176,9 @@ Describe 'Format-HveCoreJobSummary' -Tag 'Unit' {
         $r = [pscustomobject]@{
             LatestTag = 'hve-core-v9'
             LatestUrl = 'http://u'
-            LatestSha = ('a'*40)
             Pin = [pscustomobject]@{
                 PinnedTag = 'hve-core-v1'
-                PinnedSha = ('b'*40)
-                IsStale = $true
                 File = '.github/workflows/copilot-setup-steps.yml'
-                Personas = @(
-                    [pscustomobject]@{
-                        Path = '.github/agents/hve-core/rpi-agent.agent.md'
-                        PinnedUpstreamSha = '8e97ba2'
-                        LatestUpstreamSha = 'db5b3b6'
-                        Drift = $true
-                        State = 'drift'
-                    }
-                )
             }
             Files = @(
                 [pscustomobject]@{
@@ -276,10 +191,9 @@ Describe 'Format-HveCoreJobSummary' -Tag 'Unit' {
             )
         }
         $summary = Format-HveCoreJobSummary -Result $r
-        
+
         $summary | Should -Match 'hve-core-v9'
         $summary | Should -Match 'scripts/x\.psm1'
-        $summary | Should -Match '1 persona file'
         $summary | Should -Match '⚠️ Upstream advanced'
     }
 }
