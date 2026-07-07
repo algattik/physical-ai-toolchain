@@ -9,7 +9,11 @@
 
 #Requires -Version 7.0
 
-# Omit -Force so the standalone CIHelpers export is not shadowed by a nested re-import.
+# Load-order contract: standalone-linter entry points import CIHelpers with -Force,
+# then import this module; this import omits -Force to reuse that already-loaded copy
+# instead of shadowing it. Write-CIAnnotation is defined and exported only by CIHelpers
+# (never here), so it resolves to one definition across every entry path: standalone
+# linter, dot-sourced test, and module-only import.
 Import-Module (Join-Path $PSScriptRoot '../../lib/Modules/CIHelpers.psm1')
 
 function Write-SecurityLog {

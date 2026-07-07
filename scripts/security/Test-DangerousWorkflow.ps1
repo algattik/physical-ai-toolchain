@@ -2,6 +2,8 @@
 # Copyright (c) Microsoft Corporation.
 # SPDX-License-Identifier: MIT
 #Requires -Version 7.0
+# Requirement lowered from upstream 7.4 to the repo standard 7.0 (cf. Test-BinaryFreshness.ps1);
+# no 7.4-only syntax is used.
 
 <#
 .SYNOPSIS
@@ -16,8 +18,21 @@
       the pull-request head ref, executing untrusted code in a privileged context.
 
     Adapted from microsoft/hve-core scripts/security/Test-DangerousWorkflow.ps1
-    as of commit b70237d08d5caf6918b9de9952a243a8588b92dc (2026-07-02), extended
-    locally with the untrusted-checkout rule.
+    as of commit b70237d08d5caf6918b9de9952a243a8588b92dc (2026-07-02).
+
+    Local divergences from upstream (each marked inline with a '# LOCAL' comment):
+
+    - Untrusted-checkout rule. Upstream deliberately omits checkout detection,
+      delegating broader dangerous-workflow coverage to the Poutine scanner in CI.
+      This repository runs no Poutine scanner, so the rule is added here to close
+      that gap rather than duplicate it.
+    - A Get-NodeMember helper, used throughout Invoke-DangerousWorkflowCheck for
+      hashtable/PSObject node access, and a ConvertTo-NormalizedExpression pass that
+      rewrites bracket/index access to dot form before matching.
+
+    These deltas restructure upstream function bodies rather than only appending to
+    them, so a re-sync against a newer hve-core revision is a 3-way merge, not a
+    mechanical diff.
 
 .PARAMETER Path
     Directory containing workflow YAML files. Defaults to '.github/workflows'.
@@ -67,6 +82,7 @@ Import-Module (Join-Path $PSScriptRoot 'Modules/SecurityHelpers.psm1') -Force
 
 #region Functions
 
+# LOCAL: not in upstream - unifies hashtable/PSObject node access used throughout this file.
 function Get-NodeMember {
     <#
     .SYNOPSIS
@@ -124,6 +140,7 @@ function Get-ExpressionMatches {
     return @($expressionMatchList | ForEach-Object { $_.Groups[1].Value.Trim() })
 }
 
+# LOCAL: not in upstream - normalizes bracket/index expression access to dot form before matching.
 function ConvertTo-NormalizedExpression {
     <#
     .SYNOPSIS
@@ -152,7 +169,7 @@ function Test-IsUntrustedInjectionExpression {
     )
 
     $expression = $Expression.Trim()
-    $expression = ConvertTo-NormalizedExpression -Expression $expression
+    $expression = ConvertTo-NormalizedExpression -Expression $expression # LOCAL: upstream matches the raw expression.
     if ([string]::IsNullOrWhiteSpace($expression)) {
         return $false
     }
@@ -183,6 +200,7 @@ function Test-IsUntrustedInjectionExpression {
     return $false
 }
 
+# LOCAL: not in upstream - supports the untrusted-checkout rule.
 function Test-HasPullRequestTargetTrigger {
     <#
     .SYNOPSIS
@@ -214,6 +232,7 @@ function Test-HasPullRequestTargetTrigger {
     return @($onNode) -contains 'pull_request_target'
 }
 
+# LOCAL: not in upstream - supports the untrusted-checkout rule.
 function Test-IsUntrustedCheckoutRef {
     <#
     .SYNOPSIS
@@ -536,6 +555,7 @@ function Invoke-DangerousWorkflowCheck {
                     }
                 }
 
+                # LOCAL (begin): untrusted pull_request_target checkout rule (not in upstream).
                 # Untrusted checkout: a pull_request_target workflow that checks out the PR head ref
                 # runs attacker-controlled code with the privileged base-repository token.
                 if ($hasPullRequestTarget -and $usesValue -and "$usesValue" -match '^actions/checkout(?:@|/|$)') {
@@ -554,6 +574,7 @@ function Invoke-DangerousWorkflowCheck {
                         $violations += $violation
                     }
                 }
+                # LOCAL (end): untrusted pull_request_target checkout rule.
 
                 $stepIndex++
             }

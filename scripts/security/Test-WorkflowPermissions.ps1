@@ -2,6 +2,8 @@
 # Copyright (c) Microsoft Corporation.
 # SPDX-License-Identifier: MIT
 #Requires -Version 7.0
+# Requirement lowered from upstream 7.4 to the repo standard 7.0 (cf. Test-BinaryFreshness.ps1);
+# no 7.4-only syntax is used.
 
 <#
 .SYNOPSIS
@@ -36,7 +38,8 @@
 
 .PARAMETER ExcludePaths
     Comma-separated list of workflow filenames to exclude from scanning.
-    Defaults to none: every workflow in this repository declares a permissions block.
+    Defaults to none, diverging from upstream's 'copilot-setup-steps.yml' default:
+    every workflow in this repository declares a permissions block.
 
 .EXAMPLE
     ./scripts/security/Test-WorkflowPermissions.ps1
