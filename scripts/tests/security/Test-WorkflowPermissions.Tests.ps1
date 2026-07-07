@@ -167,6 +167,54 @@ Describe 'Invoke-WorkflowPermissionsCheck' -Tag 'Unit' {
         $content.version | Should -Be '2.1.0'
         $content.'$schema' | Should -Not -BeNullOrEmpty
     }
+
+    It 'Should write a console summary when all workflows have permissions' {
+        $testPath = Join-Path $TestDrive 'console-clean'
+        New-Item -ItemType Directory -Path $testPath -Force | Out-Null
+        Copy-Item -Path (Join-Path $script:FixturesPath 'workflow-with-permissions.yml') -Destination $testPath
+
+        $outputPath = Join-Path $TestDrive 'console-clean/nested/results.txt'
+        Invoke-WorkflowPermissionsCheck -Path $testPath -Format console -OutputPath $outputPath | Out-Null
+
+        $consoleOutput = Get-Content -Path $outputPath -Raw
+        $consoleOutput | Should -Match 'workflow\(s\) have a top-level permissions block\.'
+    }
+
+    It 'Should write a console summary listing permissions violations' {
+        $testPath = Join-Path $TestDrive 'console-violation'
+        New-Item -ItemType Directory -Path $testPath -Force | Out-Null
+        Copy-Item -Path (Join-Path $script:FixturesPath 'workflow-without-permissions.yml') -Destination $testPath
+
+        $outputPath = Join-Path $TestDrive 'console-violation-results.txt'
+        Invoke-WorkflowPermissionsCheck -Path $testPath -Format console -OutputPath $outputPath | Out-Null
+
+        $consoleOutput = Get-Content -Path $outputPath -Raw
+        $consoleOutput | Should -Match 'Workflow permissions violations found:'
+        $consoleOutput | Should -Match 'Remediation:'
+    }
+}
+
+Describe 'Test-WorkflowPermissions entry point' -Tag 'Unit' {
+    BeforeAll {
+        $script:ScriptPath = Join-Path $PSScriptRoot '../../security/Test-WorkflowPermissions.ps1'
+    }
+
+    It 'exits 0 when invoked as a script against compliant workflows' {
+        $testPath = Join-Path $TestDrive 'entry-clean'
+        New-Item -ItemType Directory -Path $testPath -Force | Out-Null
+        Copy-Item -Path (Join-Path $script:FixturesPath 'workflow-with-permissions.yml') -Destination $testPath
+
+        $outputPath = Join-Path $TestDrive 'entry-clean.json'
+        $exitCode = Invoke-SecurityLinterScript -ScriptPath $script:ScriptPath -ArgumentList @('-Path', $testPath, '-Format', 'json', '-OutputPath', $outputPath, '-FailOnViolation')
+        $exitCode | Should -Be 0
+    }
+
+    It 'exits 1 when invoked as a script with a non-existent path' {
+        $missingPath = Join-Path $TestDrive 'does-not-exist'
+        $outputPath = Join-Path $TestDrive 'entry-fatal.json'
+        $exitCode = Invoke-SecurityLinterScript -ScriptPath $script:ScriptPath -ArgumentList @('-Path', $missingPath, '-Format', 'json', '-OutputPath', $outputPath)
+        $exitCode | Should -Be 1
+    }
 }
 
 Describe 'Repository workflow permissions invariant' -Tag 'Unit' {

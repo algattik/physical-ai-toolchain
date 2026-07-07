@@ -71,8 +71,29 @@ jobs:
 "@
 }
 
+function Invoke-SecurityLinterScript {
+    <#
+    .SYNOPSIS
+        Runs a linter script in a child pwsh process to exercise its dot-source guard / CLI entry point, and returns the process exit code.
+    #>
+    [CmdletBinding()]
+    [OutputType([int])]
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$ScriptPath,
+
+        [Parameter(Mandatory = $false)]
+        [string[]]$ArgumentList = @()
+    )
+
+    $pwshPath = (Get-Process -Id $PID).Path
+    & $pwshPath -NoProfile -File $ScriptPath @ArgumentList *> $null
+    return $LASTEXITCODE
+}
+
 Export-ModuleMember -Function @(
     'New-WorkflowFixture',
     'Get-JsonReport',
-    'New-RunInjectionWorkflowContent'
+    'New-RunInjectionWorkflowContent',
+    'Invoke-SecurityLinterScript'
 )

@@ -430,6 +430,144 @@ Describe 'ConvertTo-DangerousWorkflowSarif' -Tag 'Unit' {
     }
 }
 
+Describe 'Test-DangerousWorkflow node helpers' -Tag 'Unit' {
+    Context 'Get-NodeMember' {
+        It 'returns null for a null node' {
+            Get-NodeMember -Node $null -Key 'on' | Should -BeNullOrEmpty
+        }
+
+        It 'reads a present key from a PSObject node' {
+            $node = [PSCustomObject]@{ ref = 'main' }
+            Get-NodeMember -Node $node -Key 'ref' | Should -Be 'main'
+        }
+
+        It 'returns null for an absent key on a PSObject node' {
+            $node = [PSCustomObject]@{ ref = 'main' }
+            Get-NodeMember -Node $node -Key 'missing' | Should -BeNullOrEmpty
+        }
+    }
+
+    Context 'Get-ExpressionMatches' {
+        It 'returns nothing for empty text' {
+            Get-ExpressionMatches -Text '' | Should -BeNullOrEmpty
+        }
+
+        It 'extracts trimmed expressions from interpolations in order' {
+            $expressions = Get-ExpressionMatches -Text 'a ${{ github.head_ref }} b ${{ github.sha }}'
+            $expressions | Should -Be @('github.head_ref', 'github.sha')
+        }
+    }
+
+    Context 'Test-IsUntrustedInjectionExpression' {
+        It 'returns false for a whitespace-only expression' {
+            Test-IsUntrustedInjectionExpression -Expression '   ' | Should -BeFalse
+        }
+    }
+
+    Context 'Test-IsUntrustedCheckoutRef' {
+        It 'returns false for a whitespace-only ref' {
+            Test-IsUntrustedCheckoutRef -Ref '   ' | Should -BeFalse
+        }
+    }
+
+    Context 'Test-HasPullRequestTargetTrigger' {
+        It 'returns false when no pull_request_target trigger is present' {
+            Test-HasPullRequestTargetTrigger -Yaml @{ jobs = @{} } | Should -BeFalse
+        }
+
+        It 'detects the boolean-folded on key' {
+            Test-HasPullRequestTargetTrigger -Yaml @{ $true = @{ pull_request_target = $null } } | Should -BeTrue
+        }
+
+        It 'detects a string-scalar on trigger' {
+            Test-HasPullRequestTargetTrigger -Yaml @{ 'on' = 'pull_request_target' } | Should -BeTrue
+        }
+
+        It 'does not flag an unrelated string-scalar on trigger' {
+            Test-HasPullRequestTargetTrigger -Yaml @{ 'on' = 'push' } | Should -BeFalse
+        }
+
+        It 'detects a list-form on trigger' {
+            Test-HasPullRequestTargetTrigger -Yaml @{ 'on' = @('push', 'pull_request_target') } | Should -BeTrue
+        }
+    }
+
+    Context 'Find-NextMatchingLine' {
+        It 'returns 0 when no line matches the pattern' {
+            Find-NextMatchingLine -Lines @('alpha', 'beta') -Pattern 'zzz' | Should -Be 0
+        }
+
+        It 'returns the 1-based index of the first matching line' {
+            Find-NextMatchingLine -Lines @('alpha', 'beta', 'gamma') -Pattern 'beta' | Should -Be 2
+        }
+    }
+}
+
+Describe 'Invoke-DangerousWorkflowCheck output handling' -Tag 'Unit' {
+    It 'writes to the default json output path when none is supplied' {
+        $fixturePath = New-WorkflowFixture -Root $TestDrive -Name 'default-json' -Content (New-RunInjectionWorkflowContent)
+
+        Push-Location $TestDrive
+        try {
+            $exitCode = Invoke-DangerousWorkflowCheck -Path $fixturePath -Format json
+            $exitCode | Should -Be 0
+            Test-Path (Join-Path $TestDrive 'logs/dangerous-workflow-results.json') | Should -BeTrue
+        }
+        finally {
+            Pop-Location
+        }
+    }
+
+    It 'writes to the default sarif output path when none is supplied' {
+        $fixturePath = New-WorkflowFixture -Root $TestDrive -Name 'default-sarif' -Content (New-RunInjectionWorkflowContent)
+
+        Push-Location $TestDrive
+        try {
+            Invoke-DangerousWorkflowCheck -Path $fixturePath -Format sarif | Out-Null
+            Test-Path (Join-Path $TestDrive 'logs/dangerous-workflow-results.sarif') | Should -BeTrue
+        }
+        finally {
+            Pop-Location
+        }
+    }
+
+    It 'returns exit code 1 when the powershell-yaml module is unavailable' {
+        Mock Get-Command { $null } -ParameterFilter { $Name -eq 'ConvertFrom-Yaml' }
+
+        Invoke-DangerousWorkflowCheck -Path $TestDrive -Format json -OutputPath (Join-Path $TestDrive 'no-yaml.json') | Should -Be 1
+    }
+}
+
+Describe 'Test-DangerousWorkflow entry point' -Tag 'Unit' {
+    BeforeAll {
+        $script:ScriptPath = Join-Path $PSScriptRoot '../../security/Test-DangerousWorkflow.ps1'
+    }
+
+    It 'exits 0 when invoked as a script against a clean workflow' {
+        $fixturePath = New-WorkflowFixture -Root $TestDrive -Name 'entry-clean' -Content @'
+name: test
+on:
+  pull_request:
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "safe"
+'@
+
+        $outputPath = Join-Path $TestDrive 'entry-clean.json'
+        $exitCode = Invoke-SecurityLinterScript -ScriptPath $script:ScriptPath -ArgumentList @('-Path', $fixturePath, '-Format', 'json', '-OutputPath', $outputPath)
+        $exitCode | Should -Be 0
+    }
+
+    It 'exits 1 when invoked as a script with a non-existent path' {
+        $missingPath = Join-Path $TestDrive 'does-not-exist'
+        $outputPath = Join-Path $TestDrive 'entry-fatal.json'
+        $exitCode = Invoke-SecurityLinterScript -ScriptPath $script:ScriptPath -ArgumentList @('-Path', $missingPath, '-Format', 'json', '-OutputPath', $outputPath)
+        $exitCode | Should -Be 1
+    }
+}
+
 Describe 'Repository dangerous workflow invariant' -Tag 'Unit' {
     It 'No workflow in .github/workflows contains a dangerous pattern' {
         $outputPath = Join-Path $TestDrive 'repo-dangerous.json'
