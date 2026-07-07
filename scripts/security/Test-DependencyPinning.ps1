@@ -1614,7 +1614,9 @@ function Get-RemediationSuggestion {
                 $response = Invoke-RestMethod -Uri $apiUrl -Headers $headers -TimeoutSec 30
                 $sha = $response.sha
 
-                if ($sha) {
+                # -Apply persists $sha verbatim into workflow files, so validate it is a real
+                # 40-hex commit SHA (via the shared validator) before ever stashing/writing it.
+                if ($sha -and (Test-SHAPinning -Version $sha -Type 'github-actions')) {
                     $Violation.Metadata['ResolvedSha'] = $sha
                     return "Pin to SHA: uses: $name@$sha # $version"
                 }
@@ -1993,7 +1995,7 @@ try {
         # This does not alter the compliance report or the exit-code gate below.
         if ($Apply) {
             $appliedCount = Invoke-ActionShaPinApply -Violations $allViolations -BasePath $Path
-            Write-PinningLog "Applied $appliedCount GitHub Actions SHA pin(s)" -Level Info
+            Write-PinningLog "Applied $appliedCount GitHub Actions SHA pin(s); re-run without -Apply to verify compliance" -Level Info
         }
 
         # Generate compliance report

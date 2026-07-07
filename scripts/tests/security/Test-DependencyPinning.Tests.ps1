@@ -1980,6 +1980,19 @@ Describe 'Invoke-ActionShaPinApply' -Tag 'Unit' {
 
         $applied | Should -Be 0
     }
+
+    It 'Skips violations whose line is past the end of the file' {
+        $workflow = Join-Path $TestDrive 'short.yml'
+        $original = "steps:`n  - uses: actions/checkout@v4`n"
+        [System.IO.File]::WriteAllText($workflow, $original)
+
+        $applied = Invoke-ActionShaPinApply -Violations @(
+            New-ActionViolation -Name 'actions/checkout' -Version 'v4' -Line 999 -Sha $script:Sha -File 'short.yml'
+        ) -BasePath $TestDrive
+
+        $applied | Should -Be 0
+        [System.IO.File]::ReadAllText($workflow) | Should -Be $original
+    }
 }
 
 Describe 'Export-CICDArtifact' -Tag 'Unit' {
