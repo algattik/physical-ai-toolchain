@@ -1,0 +1,20 @@
+name: spike control clean
+
+# Control: the safe mitigation for untrusted input — bind to an env var instead of
+# interpolating into the shell. CodeQL should NOT flag this (true-negative check).
+on:
+  pull_request:
+    types: [opened, edited]
+
+permissions:
+  contents: read
+
+jobs:
+  clean:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Print PR title safely
+        env:
+          PR_TITLE: ${{ github.event.pull_request.title }}
+        run: |
+          echo "PR title: $PR_TITLE"

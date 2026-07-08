@@ -1,0 +1,18 @@
+name: spike vuln 01 injection pr title
+
+# Dangerous: interpolates attacker-controlled PR title directly into a run script.
+# Expected CodeQL rule: actions/code-injection (medium — pull_request trigger).
+on:
+  pull_request:
+    types: [opened, edited]
+
+permissions:
+  contents: read
+
+jobs:
+  echo-title:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Print PR title
+        run: |
+          echo "PR title: ${{ github.event.pull_request.title }}"

@@ -1,0 +1,15 @@
+name: spike vuln 05 broad permissions
+
+# Poutine-overlap probe: workflow-level write-all token scope.
+# Test whether CodeQL security-extended flags overly broad GITHUB_TOKEN permissions.
+on:
+  workflow_dispatch:
+
+permissions: write-all
+
+jobs:
+  broad:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Noop
+        run: echo "runs with write-all token scope"

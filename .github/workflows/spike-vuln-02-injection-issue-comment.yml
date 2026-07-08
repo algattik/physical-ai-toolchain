@@ -1,0 +1,19 @@
+name: spike vuln 02 injection issue comment
+
+# Dangerous: attacker-controlled comment body interpolated into run, with write token.
+# Expected CodeQL rule: actions/code-injection (critical — issue_comment + write perms).
+on:
+  issue_comment:
+    types: [created]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  handle-comment:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Use comment body
+        run: |
+          echo "Comment received: ${{ github.event.comment.body }}"
