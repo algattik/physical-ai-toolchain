@@ -1,0 +1,21 @@
+name: spike vuln 07 injection github-script
+
+# Sink probe: untrusted comment body interpolated into an actions/github-script body.
+# Expected CodeQL rule: actions/code-injection (script sink).
+on:
+  issue_comment:
+    types: [created]
+
+permissions:
+  contents: read
+
+jobs:
+  script-sink:
+    runs-on: ubuntu-latest
+    steps:
+      - name: github-script with untrusted input
+        uses: actions/github-script@373c709c69115d41ff229c7e5df9f8788daa9553 # v9.0.0
+        with:
+          script: |
+            const body = "${{ github.event.comment.body }}"
+            console.log(body)

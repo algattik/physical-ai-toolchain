@@ -1,0 +1,19 @@
+name: spike vuln 06 injection head ref
+
+# Source probe: github.head_ref (attacker-controlled branch name) into run.
+# Expected CodeQL rule: actions/code-injection.
+on:
+  pull_request:
+    types: [opened]
+
+permissions:
+  contents: read
+
+jobs:
+  use-head-ref:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Use head ref in run
+        run: |
+          echo "Building branch ${{ github.head_ref }}"
+          git checkout "${{ github.head_ref }}"

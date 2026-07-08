@@ -1,0 +1,20 @@
+name: spike vuln 09 env laundered eval
+
+# False-negative probe: value is bound to an env var (the recommended mitigation),
+# but then re-injected via shell eval. Does CodeQL track the downstream eval sink?
+on:
+  pull_request:
+    types: [opened]
+
+permissions:
+  contents: read
+
+jobs:
+  laundered:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Env-bound but eval'd
+        env:
+          TITLE: ${{ github.event.pull_request.title }}
+        run: |
+          eval "echo $TITLE"

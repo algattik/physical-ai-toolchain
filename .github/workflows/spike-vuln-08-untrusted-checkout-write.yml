@@ -1,0 +1,23 @@
+name: spike vuln 08 untrusted checkout write
+
+# Severity-escalation probe vs sample 03: contents:write, mutable head.ref, no
+# persist-credentials:false, explicit build execution. Does CodeQL rate it critical?
+on:
+  pull_request_target:
+    types: [opened, synchronize]
+
+permissions:
+  contents: write
+
+jobs:
+  build-untrusted:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout untrusted head ref
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          ref: ${{ github.event.pull_request.head.ref }}
+      - name: Execute checked-out code
+        run: |
+          npm ci
+          npm run build --if-present
