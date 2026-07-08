@@ -137,6 +137,16 @@ jobs:
       contents: read
       id-token: write
 
+  # Pytest: shared CI scripts component
+  pytest-shared-ci:
+    name: Pytest Shared CI
+    uses: ./.github/workflows/pytest-shared-ci.yml
+    with:
+      code-coverage: true
+    permissions:
+      contents: read
+      id-token: write
+
   # Dataviewer frontend lint, type-check, and build
   dataviewer-frontend-tests:
     name: Dataviewer Frontend Tests
@@ -287,6 +297,7 @@ jobs:
       - pytest-dm-tools
       - pytest-data-pipeline
       - pytest-inference
+      - pytest-shared-ci
       - dataviewer-frontend-tests
       - dataviewer-backend-pytests
       - evaluation-pytests
@@ -605,8 +616,7 @@ jobs:
           BUNDLE_PATH: ${{ steps.attest.outputs.bundle-path }}
           WHEEL_BUNDLE_PATH: ${{ steps.attest-wheel.outputs.bundle-path }}
           TAG: ${{ needs.release-please.outputs.tag_name }}
-        run: shared/ci/create-signing-artifacts.sh
-        shell: bash
+        run: ./scripts/ci/New-SigningArtifacts.ps1
 
       - name: Upload release assets
         env:
@@ -700,8 +710,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ needs.release-please.outputs.tag_name }}
-        run: shared/ci/append-release-verification-notes.sh
-        shell: bash
+        run: ./scripts/ci/Add-ReleaseVerificationNotes.ps1
 
   # Promote draft release to published
   publish-release:
