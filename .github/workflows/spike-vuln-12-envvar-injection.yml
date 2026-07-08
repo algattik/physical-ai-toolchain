@@ -1,0 +1,17 @@
+name: spike vuln 12 envvar injection
+
+# Probe: untrusted input written into GITHUB_ENV. Expected: actions/envvar-injection.
+on:
+  pull_request:
+    types: [opened]
+
+permissions:
+  contents: read
+
+jobs:
+  write-env:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Persist untrusted input to GITHUB_ENV
+        run: |
+          echo "PR_TITLE=${{ github.event.pull_request.title }}" >> "$GITHUB_ENV"

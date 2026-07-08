@@ -1,0 +1,13 @@
+name: spike vuln 11 missing permissions
+
+# Probe: no permissions block at all (inherits broad default token).
+# Test whether actions/missing-workflow-permissions fires (contrast sample 05 write-all).
+on:
+  workflow_dispatch:
+
+jobs:
+  no-perms:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Noop
+        run: echo "no permissions block declared"
