@@ -234,6 +234,8 @@ function Format-HveCoreIssueBody {
 
     $fileRows = ($files | ForEach-Object { Format-HveCoreDriftRow -File $_ }) -join "`n"
 
+    $compareBase = if ($pin.PinnedTag -ne 'unknown') { $pin.PinnedTag } else { $pin.PinnedSha }
+
     return @"
 ## hve-core Upstream Freshness Report
 
@@ -248,7 +250,7 @@ $fileRows
 
 ### How to Refresh
 
-Review the upstream changes and port any relevant ones into the locally-adapted copy; do not blindly overwrite (these files carry intentional local adaptations). Compare link: https://github.com/microsoft/hve-core/compare/$($pin.PinnedTag)...$($Result.LatestTag)
+Review the upstream changes and port any relevant ones into the locally-adapted copy; do not blindly overwrite (these files carry intentional local adaptations). Compare link: https://github.com/microsoft/hve-core/compare/$compareBase...$($Result.LatestTag)
 
 Run ``npm run lint:ps`` and ``npm run test:ps`` after changes.
 
@@ -275,7 +277,9 @@ function Format-HveCoreJobSummary {
 
     $fileRows = foreach ($f in $files) {
         $fStatus = Get-HveCoreStateLabel -State $f.State
-        "| $($f.Path) | $fStatus |"
+        $pSha = if ($f.PinnedUpstreamSha) { $f.PinnedUpstreamSha.Substring(0, [Math]::Min(7, $f.PinnedUpstreamSha.Length)) } else { '' }
+        $lSha = if ($f.LatestUpstreamSha) { $f.LatestUpstreamSha.Substring(0, [Math]::Min(7, $f.LatestUpstreamSha.Length)) } else { '' }
+        "| $($f.Path) | $pSha | $lSha | $fStatus |"
     }
 
     return @"
@@ -284,8 +288,8 @@ function Format-HveCoreJobSummary {
 Latest release: $($Result.LatestTag)
 Drift baseline: $($pin.PinnedTag)
 
-| Derived File | Status |
-|--------------|--------|
+| Derived File | Pinned blob | Latest blob | Status |
+|--------------|-------------|-------------|--------|
 $($fileRows -join "`n")
 "@
 }
@@ -372,6 +376,7 @@ function Invoke-HveCoreFreshnessCheck {
 
         $pin = [ordered]@{
             PinnedTag = $pinRef.Tag
+            PinnedSha = $pinRef.Sha
             File      = $script:SetupWorkflow
         }
 
