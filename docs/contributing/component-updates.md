@@ -186,13 +186,13 @@ Apply this checklist before merging any component update.
 
 These workflows validate dependency update PRs automatically.
 
-| Workflow                      | Purpose                            | Scope              |
-|-------------------------------|------------------------------------|--------------------|
-| `dependency-review.yml`       | Block moderate+ vulnerabilities    | All dependency PRs |
-| `dependency-pinning-scan.yml` | Enforce 95% SHA pinning compliance | GitHub Actions     |
-| `codeql-analysis.yml`         | Static analysis for Python code    | Python changes     |
-| `scorecard.yml`               | OpenSSF Scorecard assessment       | Repository-wide    |
-| `uv-lock-consistency.yml`     | Fail on `uv.lock`/manifest drift   | Python lockfiles   |
+| Workflow                      | Purpose                              | Scope              |
+|-------------------------------|--------------------------------------|--------------------|
+| `dependency-review.yml`       | Block moderate+ vulnerabilities      | All dependency PRs |
+| `dependency-pinning-scan.yml` | Enforce 95% SHA pinning compliance   | GitHub Actions     |
+| `codeql-analysis.yml`         | Static analysis for code + workflows | Repository-wide    |
+| `scorecard.yml`               | OpenSSF Scorecard assessment         | Repository-wide    |
+| `uv-lock-consistency.yml`     | Fail on `uv.lock`/manifest drift     | Python lockfiles   |
 
 ## Security-Critical Updates
 
