@@ -169,6 +169,31 @@ Describe 'Format-HveCoreIssueBody' -Tag 'Unit' {
         $body | Should -Match 'compare/hve-core-v1\.\.\.hve-core-v9'
         $body | Should -Not -Match '[Pp]ersona'
     }
+
+    It 'Falls back to the pinned SHA in the compare link when the tag is unknown' {
+        $r = [pscustomobject]@{
+            LatestTag = 'hve-core-v9'
+            LatestUrl = 'http://u'
+            Pin = [pscustomobject]@{
+                PinnedTag = 'unknown'
+                PinnedSha = 'abcdef1234567890'
+                File = '.github/workflows/copilot-setup-steps.yml'
+            }
+            Files = @(
+                [pscustomobject]@{
+                    Path = 'scripts/x.psm1'
+                    PinnedUpstreamSha = '1111111'
+                    LatestUpstreamSha = '2222222'
+                    Drift = $true
+                    State = 'drift'
+                }
+            )
+        }
+        $body = Format-HveCoreIssueBody -Result $r -RunUrl 'http://run' -CheckDate '2026-01-01'
+
+        $body | Should -Match 'compare/abcdef1234567890\.\.\.hve-core-v9'
+        $body | Should -Not -Match 'compare/unknown'
+    }
 }
 
 Describe 'Format-HveCoreJobSummary' -Tag 'Unit' {
@@ -195,5 +220,7 @@ Describe 'Format-HveCoreJobSummary' -Tag 'Unit' {
         $summary | Should -Match 'hve-core-v9'
         $summary | Should -Match 'scripts/x\.psm1'
         $summary | Should -Match '⚠️ Upstream advanced'
+        $summary | Should -Match '\| Pinned blob \| Latest blob \|'
+        $summary | Should -Match '\| 1111111 \| 2222222 \|'
     }
 }
