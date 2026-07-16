@@ -44,7 +44,7 @@ jobs:
       - name: Validate dangerous workflow patterns
         shell: pwsh
         env:
-          PERMISSIONS_SOFT_FAIL: ${{ inputs.soft-fail }}
+          DANGEROUS_WORKFLOW_SOFT_FAIL: ${{ inputs.soft-fail }}
         run: |
-          $failOnViolation = $env:PERMISSIONS_SOFT_FAIL -ne 'true'
+          $failOnViolation = $env:DANGEROUS_WORKFLOW_SOFT_FAIL -ne 'true'
           ./scripts/security/Test-DangerousWorkflow.ps1 -Path .github/workflows -Format console -FailOnViolation:$failOnViolation

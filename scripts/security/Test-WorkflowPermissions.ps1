@@ -31,7 +31,8 @@
     Output format: 'json', 'sarif', or 'console'. Defaults to 'json'.
 
 .PARAMETER OutputPath
-    Path for result output file. Defaults to 'logs/workflow-permissions-results.json'.
+    Path for result output file. Defaults to 'logs/workflow-permissions-results.json'
+    or 'logs/workflow-permissions-results.sarif' for SARIF output.
 
 .PARAMETER FailOnViolation
     When set, exits with non-zero code if any workflow is missing permissions.
@@ -63,7 +64,7 @@ param(
     [string]$Format = 'json',
 
     [Parameter(Mandatory = $false)]
-    [string]$OutputPath = 'logs/workflow-permissions-results.json',
+    [string]$OutputPath = '',
 
     [Parameter(Mandatory = $false)]
     [switch]$FailOnViolation,
@@ -77,7 +78,7 @@ $ErrorActionPreference = 'Stop'
 Import-Module (Join-Path $PSScriptRoot '../lib/Modules/CIHelpers.psm1') -Force
 Import-Module (Join-Path $PSScriptRoot 'Modules/SecurityHelpers.psm1') -Force
 
-# region Helper Functions
+#region Helper Functions
 
 function Test-WorkflowPermissions {
     <#
@@ -189,7 +190,7 @@ function Invoke-WorkflowPermissionsCheck {
         [string]$Format = 'json',
 
         [Parameter(Mandatory = $false)]
-        [string]$OutputPath = 'logs/workflow-permissions-results.json',
+        [string]$OutputPath = '',
 
         [Parameter(Mandatory = $false)]
         [switch]$FailOnViolation,
@@ -200,6 +201,15 @@ function Invoke-WorkflowPermissionsCheck {
 
     Write-SecurityLog "Starting workflow permissions validation" -Level Info -CIAnnotation
     Write-SecurityLog "Scanning: $Path" -Level Info
+
+    if ([string]::IsNullOrWhiteSpace($OutputPath)) {
+        if ($Format -eq 'sarif') {
+            $OutputPath = 'logs/workflow-permissions-results.sarif'
+        }
+        else {
+            $OutputPath = 'logs/workflow-permissions-results.json'
+        }
+    }
 
     $resolvedPath = Resolve-Path -Path $Path -ErrorAction Stop
     Write-SecurityLog "Resolved path: $resolvedPath" -Level Info
@@ -326,7 +336,7 @@ function Invoke-WorkflowPermissionsCheck {
     return $exitCode
 }
 
-# endregion
+#endregion
 
 # Dot-source guard
 if ($MyInvocation.InvocationName -ne '.') {
