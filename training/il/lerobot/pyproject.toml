@@ -29,22 +29,22 @@ dependencies = [
     # Global prerelease resolution would otherwise select pydantic and sentry-sdk
     # alpha releases; pin stable versions unless a direct dependency requires them.
     "pydantic==2.13.4",
-    "sentry-sdk==2.63.0",
+    "sentry-sdk==2.65.0",
     "psutil==7.2.2",
     "pynvml==13.0.1",
     "pyperclip==1.11.0",
     "datasets==5.0.0",
     "pyarrow==24.0.0",
     "matplotlib==3.11.0",
-    "huggingface-hub==1.21.0",
-    "lerobot==0.5.1",
+    "huggingface-hub==1.23.0",
+    "lerobot==0.6.0",
     # Direct dep: the multi-GPU code path invokes `accelerate launch` (see
     # training/il/scripts/lerobot/train.py). Without an explicit pin the version
     # would track lerobot's transitive range and could drift on dependency bumps.
     "accelerate==1.14.0",
     "torchcodec==0.14.0; platform_machine == 'x86_64' or platform_machine == 'AMD64'",
     # Pin gitpython to address GHSA-mv93-w799-cj2w (transitive via mlflow-skinny and wandb).
-    "gitpython==3.1.50",
+    "gitpython==3.1.51",
     # Pin urllib3 to address GHSA-qccp-gfcp-xxvc and GHSA-mf9v-mfxr-j63j (transitive via many HTTP clients).
     "urllib3==2.7.0",
     # Pin cryptography >= 48.0.1 to address GHSA-537c-gmf6-5ccf (high severity:
